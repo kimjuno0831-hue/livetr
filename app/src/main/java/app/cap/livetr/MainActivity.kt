@@ -93,10 +93,15 @@ class MainActivity : Activity() {
         engineGroup.addView(RadioButton(this).apply { id = 101; text = "구글 번역 (무료, 키 필요 없음)" })
         engineGroup.addView(RadioButton(this).apply { id = 102; text = "제미나이 AI (무료 키 필요, 가장 자연스러움)" })
         engineGroup.addView(RadioButton(this).apply { id = 103; text = "기기 안 번역 (인터넷 없이, 품질 낮음)" })
+        engineGroup.addView(RadioButton(this).apply {
+            id = 104
+            text = "제미나이 통역 (실험) — 소리를 바로 통역해서 가장 빠름. 제미나이 키 필요, 용어집 미적용"
+        })
         engineGroup.check(
             when (Prefs.engine(this)) {
                 Prefs.ENGINE_GEMINI -> 102
                 Prefs.ENGINE_MLKIT -> 103
+                Prefs.ENGINE_LIVE -> 104
                 else -> 101
             }
         )
@@ -119,9 +124,9 @@ class MainActivity : Activity() {
         geminiArea.addView(modelBox)
         geminiArea.addView(note("제미나이가 실패하거나 한도를 넘으면 자동으로 구글 번역으로 바꿔서 보여줘요 (자막 옆에 ↩구글 표시)."))
         col.addView(geminiArea)
-        geminiArea.visibility = if (engineGroup.checkedRadioButtonId == 102) View.VISIBLE else View.GONE
+        geminiArea.visibility = if (engineGroup.checkedRadioButtonId in listOf(102, 104)) View.VISIBLE else View.GONE
         engineGroup.setOnCheckedChangeListener { _, id ->
-            geminiArea.visibility = if (id == 102) View.VISIBLE else View.GONE
+            geminiArea.visibility = if (id == 102 || id == 104) View.VISIBLE else View.GONE
             save()
         }
         col.addView(Button(this).apply {
@@ -226,6 +231,7 @@ class MainActivity : Activity() {
         val engine = when (engineGroup.checkedRadioButtonId) {
             102 -> Prefs.ENGINE_GEMINI
             103 -> Prefs.ENGINE_MLKIT
+            104 -> Prefs.ENGINE_LIVE
             else -> Prefs.ENGINE_GOOGLE
         }
         Prefs.get(this).edit()

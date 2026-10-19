@@ -8,6 +8,7 @@ object Prefs {
     const val ENGINE_GOOGLE = "google"
     const val ENGINE_GEMINI = "gemini"
     const val ENGINE_MLKIT = "mlkit"
+    const val ENGINE_LIVE = "live"   // 제미나이 통역 (소리를 바로 번역)
     const val DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
     fun get(ctx: Context): SharedPreferences =

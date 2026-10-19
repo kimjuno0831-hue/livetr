@@ -20,14 +20,15 @@ class Translators(private val ctx: Context) {
     fun translate(zh: String, history: List<String>): Pair<String, String> {
         val engine = Prefs.engine(ctx)
         val gl = Prefs.glossary(ctx)
-        if (engine == Prefs.ENGINE_GEMINI) {
+        // 통역 모드가 실패해서 기본 방식으로 넘어왔을 때도 같은 키로 제미나이 번역
+        if (engine == Prefs.ENGINE_GEMINI || engine == Prefs.ENGINE_LIVE) {
             try {
                 return Pair(gemini(zh, history, gl), "제미나이")
             } catch (_: Exception) {
                 // 실패하면 구글 번역으로 대신함
             }
         }
-        if (engine == Prefs.ENGINE_GEMINI || engine == Prefs.ENGINE_GOOGLE) {
+        if (engine == Prefs.ENGINE_GEMINI || engine == Prefs.ENGINE_LIVE || engine == Prefs.ENGINE_GOOGLE) {
             try {
                 return Pair(google(applyGlossary(zh, gl)), "구글")
             } catch (_: Exception) {
@@ -42,7 +43,10 @@ class Translators(private val ctx: Context) {
         val gl = Prefs.glossary(ctx)
         val sb = StringBuilder()
         when (Prefs.engine(ctx)) {
-            Prefs.ENGINE_GEMINI -> {
+            Prefs.ENGINE_GEMINI, Prefs.ENGINE_LIVE -> {
+                if (Prefs.engine(ctx) == Prefs.ENGINE_LIVE) {
+                    sb.append("(제미나이 통역은 소리로만 동작해서 여기선 키만 확인해요. 자막을 시작해서 확인하세요.)\n")
+                }
                 sb.append("제미나이: ")
                 sb.append(runCatching { gemini(zh, emptyList(), gl) }.getOrElse { "실패 - ${it.message}" })
                 sb.append("\n구글(대체용): ")

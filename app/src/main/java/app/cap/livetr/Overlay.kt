@@ -268,11 +268,48 @@ class Overlay(private val ctx: Context) {
 
     fun update(id: Long, tr: String, tag: String) = ui.post {
         val e = entries[id] ?: return@post
-        e.tr.text = tr
+        e.tr.text = splitForReading(tr)
         if (tag.isNotEmpty()) e.origText = "${e.origText}   $tag"
         fill(e)
         if (follow) scrollToEnd()
         wake()
+    }
+
+    // 원문 줄만 바꾸기 (제미나이 통역 모드에서 원문이 조금씩 들어올 때)
+    fun setOrig(id: Long, orig: String) = ui.post {
+        val e = entries[id] ?: return@post
+        e.origText = orig
+        fill(e)
+        if (follow) scrollToEnd()
+    }
+
+    companion object {
+        // 넷플릭스 한국어 자막 기준: 한 줄 16자 × 2줄 ≈ 32자.
+        // 이보다 긴 번역은 문장부호나 띄어쓰기 자리에서 나눠 줄바꿈해서 읽기 쉽게.
+        const val MAX_CHUNK = 32
+
+        fun splitForReading(text: String): String {
+            val t = text.trim()
+            if (t.length <= MAX_CHUNK) return t
+            val out = ArrayList<String>()
+            var rest = t
+            while (rest.length > MAX_CHUNK) {
+                val window = rest.substring(0, MAX_CHUNK + 1)
+                var cut = -1
+                // 1순위: 문장 끝 / 2순위: 쉼표 / 3순위: 띄어쓰기 (너무 앞에서 자르진 않음)
+                for (marks in listOf(".?!。？！…", ",，、;；", " ")) {
+                    for (i in window.length - 1 downTo MAX_CHUNK / 3) {
+                        if (marks.indexOf(window[i]) >= 0) { cut = i + 1; break }
+                    }
+                    if (cut > 0) break
+                }
+                if (cut <= 0) cut = MAX_CHUNK
+                out.add(rest.substring(0, cut).trim())
+                rest = rest.substring(cut).trim()
+            }
+            if (rest.isNotEmpty()) out.add(rest)
+            return out.joinToString("\n")
+        }
     }
 
     private fun fill(e: Entry) {

@@ -60,6 +60,10 @@ class CaptureService : Service() {
     private val liveChunks = ArrayList<FloatArray>()
     @Volatile private var liveSamples = 0
 
+    // 제미나이 통역 모드: 켜져 있으면 소리를 폰 안 인식기 대신 제미나이로 보냄
+    @Volatile private var liveMode = false
+    @Volatile private var live: LiveSession? = null
+
     // 상태 표시용
     @Volatile private var nShown = 0
     @Volatile private var nHidden = 0
@@ -106,6 +110,13 @@ class CaptureService : Service() {
 
         val ov = overlay ?: Overlay(this).also { overlay = it; it.attach() }
         ov.clearError()
+        live?.close()
+        live = null
+        liveMode = false
+        if (Prefs.engine(this) == Prefs.ENGINE_LIVE) {
+            if (Prefs.geminiKey(this).isNotEmpty()) liveMode = true
+            else ov.error("제미나이 키가 없어서 기본 방식(폰 인식 + 번역)으로 동작해요.")
+        }
         nShown = 0
         nHidden = 0
 
@@ -115,7 +126,10 @@ class CaptureService : Service() {
             if (activeWorkers.get() > 0) ov.info("이전 작업 정리 중…")
             while (activeWorkers.get() > 0 && SystemClock.uptimeMillis() < deadline) Thread.sleep(100)
             if (!alive(my)) return@thread
-            activeWorkers.addAndGet(3)
+            activeWorkers.addAndGet(if (liveMode) 4 else 3)
+            if (liveMode) {
+                thread(name = "live-$my") { try { liveLoop(my) } finally { activeWorkers.decrementAndGet() } }
+            }
             thread(name = "capture-$my") { try { captureLoop(my, proj) } finally { activeWorkers.decrementAndGet() } }
             thread(name = "asr-$my") { try { asrLoop(my) } finally { activeWorkers.decrementAndGet() } }
             thread(name = "translate-$my") { try { translateLoop(my) } finally { activeWorkers.decrementAndGet() } }
@@ -158,7 +172,8 @@ class CaptureService : Service() {
     // 상태줄 + 알림 갱신
     private fun report(force: Boolean = false) {
         val hidden = if (nHidden > 0) " · 숨김 $nHidden" else ""
-        val text = "듣는 중 · 자막 $nShown$hidden" + if (captureNote.isNotEmpty()) " · $captureNote" else ""
+        val mode = if (liveMode) "제미나이 통역 중" else "듣는 중"
+        val text = "$mode · 자막 $nShown$hidden" + if (captureNote.isNotEmpty()) " · $captureNote" else ""
         overlay?.info(text)
         val now = SystemClock.uptimeMillis()
         if (force || now - lastNotify > 3000) {
@@ -290,8 +305,14 @@ class CaptureService : Service() {
                         cnt = 0
                         if (wi == 512) {
                             val chunk = win.copyOf()
-                            v.acceptWaveform(chunk)
                             wi = 0
+                            val ls = live
+                            if (liveMode) {
+                                // 통역 모드: 제미나이로 보냄 (연결 준비 중이면 그냥 버림)
+                                ls?.send(chunk)
+                                continue
+                            }
+                            v.acceptWaveform(chunk)
                             var cut = false
                             while (!v.empty()) {
                                 val seg = v.front()
@@ -338,8 +359,62 @@ class CaptureService : Service() {
         }
     }
 
+    // 0) 제미나이 통역 모드: 연결 유지, 끊기면 다시 연결, 계속 안 되면 기본 방식으로 전환
+    private fun liveLoop(my: Int) {
+        val key = Prefs.geminiKey(this)
+        var quickFails = 0
+        try {
+            while (alive(my) && liveMode) {
+                overlay?.info("제미나이 통역 연결 중…")
+                val sess = LiveSession(key, overlay) { nShown++; report() }
+                live = sess
+                sess.connect()
+                val t0 = SystemClock.uptimeMillis()
+                while (alive(my) && !sess.connected && sess.closedReason == null &&
+                    SystemClock.uptimeMillis() - t0 < 10_000
+                ) Thread.sleep(100)
+                if (sess.connected) {
+                    overlay?.clearError()
+                    report(force = true)
+                }
+                while (alive(my) && sess.closedReason == null && sess.connected) {
+                    sess.tick()
+                    Thread.sleep(300)
+                }
+                val reason = sess.closedReason ?: if (!sess.connected) "연결 시간 초과" else ""
+                val lived = SystemClock.uptimeMillis() - t0
+                sess.close()
+                live = null
+                if (!alive(my)) break
+
+                val r = reason.lowercase()
+                val quota = r.contains("quota") || r.contains("429") || r.contains("exhausted") || r.contains("limit")
+                if (quota) {
+                    liveMode = false
+                    overlay?.error("제미나이 통역 무료 한도에 걸렸어요 → 기본 방식으로 전환 ($reason)")
+                    break
+                }
+                // 오래 잘 돌다가 끊긴 건(세션 시간 제한 등) 바로 다시 연결. 금방 끊기는 게 반복되면 포기.
+                if (lived > 60_000) quickFails = 0 else quickFails++
+                if (quickFails >= 3) {
+                    liveMode = false
+                    overlay?.error("제미나이 통역 연결이 계속 실패해요 → 기본 방식으로 전환 ($reason)")
+                    break
+                }
+                overlay?.info("제미나이 통역 다시 연결 중… ($reason)")
+                Thread.sleep(if (quickFails == 0) 300L else 2000L)
+            }
+        } finally {
+            live?.close()
+            live = null
+        }
+    }
+
     // 2) 잘라낸 말소리 → 글자 (+ 중국어인지 판별)
     private fun asrLoop(my: Int) {
+        // 통역 모드에서는 폰 인식기가 필요 없음. 통역이 실패해서 전환될 때까지 대기.
+        while (alive(my) && liveMode) Thread.sleep(300)
+        if (!alive(my)) return
         try {
             val modelId = Prefs.asrModel(this)
             if (!Models.isReady(this, modelId)) {
@@ -435,7 +510,7 @@ class CaptureService : Service() {
                     Pair("(번역 실패: ${e.message})", "")
                 }
                 val chosen = when (Prefs.engine(this)) {
-                    Prefs.ENGINE_GEMINI -> "제미나이"
+                    Prefs.ENGINE_GEMINI, Prefs.ENGINE_LIVE -> "제미나이"
                     Prefs.ENGINE_GOOGLE -> "구글"
                     else -> "기기번역"
                 }
@@ -451,6 +526,8 @@ class CaptureService : Service() {
     override fun onDestroy() {
         destroyed = true
         session++
+        live?.close()
+        live = null
         projection?.let { p ->
             projection = null
             try { p.stop() } catch (_: Exception) {}
