@@ -22,30 +22,118 @@ class Translators(private val ctx: Context) {
 
     private var mlkit: Translator? = null
 
+    // 번역 결과: 번역문, 실제로 쓴 번역기, (듣고 번역일 때) 제미나이가 다시 받아 적은 중국어, 그 말의 언어
+    class Result(val ko: String, val used: String, val zh: String? = null, val lang: String? = null)
+
     // onPartial: 제미나이 번역이 글자 단위로 흘러들어올 때마다 지금까지의 번역을 알려줌
+    // hints: 용어집 이름이 잘못 인식됐을 수 있는 곳 (제미나이가 맥락 보고 판단)
+    // audio: 이 문장의 말소리 (16kHz). '제미나이 듣고 번역'일 때 씀
     fun translate(
         zh: String,
         history: List<String>,
         onPartial: ((String) -> Unit)? = null,
-    ): Pair<String, String> {
+        hints: List<Pinyin.Hint> = emptyList(),
+        audio: FloatArray? = null,
+    ): Result {
         val engine = Prefs.engine(ctx)
         val gl = Prefs.glossary(ctx)
-        // 통역 모드가 실패해서 기본 방식으로 넘어왔을 때도 같은 키로 제미나이 번역
-        if (engine == Prefs.ENGINE_GEMINI || engine == Prefs.ENGINE_LIVE) {
+        if (engine == Prefs.ENGINE_HEAR && audio != null) {
             try {
-                return Pair(geminiTranslate(zh, history, gl, onPartial), "제미나이")
+                return hear(audio, zh, history, gl, hints)
+            } catch (_: Exception) {
+                // 실패하면 받아 적은 글자로 제미나이 번역
+            }
+        }
+        // 통역 모드가 실패해서 기본 방식으로 넘어왔을 때도 같은 키로 제미나이 번역
+        if (Prefs.geminiFamily(engine)) {
+            try {
+                return Result(geminiTranslate(zh, history, gl, onPartial, hints), "제미나이")
             } catch (_: Exception) {
                 // 실패하면 구글 번역으로 대신함
             }
         }
-        if (engine == Prefs.ENGINE_GEMINI || engine == Prefs.ENGINE_LIVE || engine == Prefs.ENGINE_GOOGLE) {
+        if (Prefs.geminiFamily(engine) || engine == Prefs.ENGINE_GOOGLE) {
             try {
-                return Pair(google(applyGlossary(zh, gl)), "구글")
+                return Result(google(applyGlossary(zh, gl)), "구글")
             } catch (_: Exception) {
                 // 인터넷 문제 등 → 기기 안 번역으로 대신함
             }
         }
-        return Pair(mlkit(applyGlossary(zh, gl)), "기기번역")
+        return Result(mlkit(applyGlossary(zh, gl)), "기기번역")
+    }
+
+    // 제미나이에게 줄 용어집 (공통 + 지금 보는 작품들, 발음 포함, 최대 80개)
+    private fun glossaryBlock(gl: List<Pair<String, String>>): String {
+        if (gl.isEmpty()) return ""
+        val sb = StringBuilder("\n\n[용어집 - 이 이름·용어는 반드시 이렇게 번역. 음성 인식이 비슷한 소리의 다른 글자로 " +
+            "적었을 수 있으니, 소리가 비슷하고 문맥이 맞으면 용어집 이름으로 보라]\n")
+        gl.sortedBy { it.first }.take(80).forEach { (z, k) ->
+            sb.append(z).append(" (").append(Pinyin.of(ctx, z)).append(") → ").append(k).append('\n')
+        }
+        return sb.toString()
+    }
+
+    private fun hintBlock(hints: List<Pinyin.Hint>): String {
+        if (hints.isEmpty()) return ""
+        val sb = StringBuilder("\n\n[인식 오류 의심 - 문맥이 맞을 때만 반영하고, 아니면 무시]\n")
+        hints.forEach { h ->
+            sb.append("'").append(h.found).append("' → 혹시 '").append(h.term).append("'")
+            if (h.ko.isNotEmpty()) sb.append("(").append(h.ko).append(")")
+            sb.append("? (").append(h.kind).append(")\n")
+        }
+        return sb.toString()
+    }
+
+    // 제미나이 듣고 번역: 말소리를 직접 듣고 중국어 받아쓰기 + 번역을 한 번에
+    private fun hear(
+        audio: FloatArray,
+        asrZh: String,
+        history: List<String>,
+        gl: List<Pair<String, String>>,
+        hints: List<Pinyin.Hint>,
+    ): Result {
+        val system = buildString {
+            append("너는 중국어 영상의 실시간 자막 번역가다. 주어진 음성 조각을 직접 듣고, 중국어 원문을 정확히 받아 적은 뒤 ")
+            append("자연스러운 한국어 구어체 자막으로 번역하라. 폰 음성 인식 결과도 참고로 주지만 틀린 글자가 많을 수 있으니 ")
+            append("소리를 우선하라. 말이 중국어(보통화·광둥어 포함)가 아니면 lang에 그 언어 코드(예: ko, en, ja)를 넣어라. ")
+            append("반드시 JSON 한 줄로만 답하라: {\"zh\":\"중국어 원문\",\"ko\":\"한국어 번역\",\"lang\":\"zh\"}")
+            val topic = Prefs.topic(ctx)
+            if (topic.isNotEmpty()) append("\n\n[지금 보는 작품]\n").append(topic)
+            append(glossaryBlock(gl))
+        }
+        val user = buildString {
+            if (history.isNotEmpty()) {
+                append("[앞 문맥(번역하지 말 것)]\n")
+                history.forEach { append(it).append('\n') }
+                append('\n')
+            }
+            append("[폰 음성 인식 결과(참고용)]\n").append(asrZh)
+            append(hintBlock(hints))
+        }
+        val raw = gemini(system, user, false, null, wav(audio), json = true)
+        val a = raw.indexOf('{')
+        val b = raw.lastIndexOf('}')
+        if (a < 0 || b <= a) throw RuntimeException("형식 오류")
+        val o = JSONObject(raw.substring(a, b + 1))
+        val ko = o.optString("ko").trim()
+        val zh = o.optString("zh").trim()
+        val lang = o.optString("lang").trim().lowercase()
+        if (ko.isEmpty() && (lang.isEmpty() || lang == "zh" || lang == "yue")) throw RuntimeException("빈 결과")
+        return Result(ko, "제미나이(듣기)", zh.ifEmpty { null }, lang.ifEmpty { null })
+    }
+
+    // 16kHz 모노 소리를 WAV(16비트)로
+    private fun wav(samples: FloatArray): ByteArray {
+        val n = samples.size
+        val data = n * 2
+        val out = java.io.ByteArrayOutputStream(44 + data)
+        fun i32(v: Int) { out.write(v and 0xff); out.write((v shr 8) and 0xff); out.write((v shr 16) and 0xff); out.write((v shr 24) and 0xff) }
+        fun i16(v: Int) { out.write(v and 0xff); out.write((v shr 8) and 0xff) }
+        out.write("RIFF".toByteArray()); i32(36 + data); out.write("WAVE".toByteArray())
+        out.write("fmt ".toByteArray()); i32(16); i16(1); i16(1); i32(16000); i32(32000); i16(2); i16(16)
+        out.write("data".toByteArray()); i32(data)
+        for (f in samples) i16((f * 32767f).toInt().coerceIn(-32768, 32767))
+        return out.toByteArray()
     }
 
     // 말하는 도중 미리 보기용 빠른 번역. 한도 걱정 없는 구글 번역만 씀 (기기번역 모드면 안 함)
@@ -71,9 +159,9 @@ class Translators(private val ctx: Context) {
         val gl = Prefs.glossary(ctx)
         val sb = StringBuilder()
         when (Prefs.engine(ctx)) {
-            Prefs.ENGINE_GEMINI, Prefs.ENGINE_LIVE -> {
-                if (Prefs.engine(ctx) == Prefs.ENGINE_LIVE) {
-                    sb.append("(제미나이 통역은 소리로만 동작해서 여기선 키만 확인해요. 자막을 시작해서 확인하세요.)\n")
+            Prefs.ENGINE_GEMINI, Prefs.ENGINE_LIVE, Prefs.ENGINE_HEAR -> {
+                if (Prefs.engine(ctx) != Prefs.ENGINE_GEMINI) {
+                    sb.append("(이 방식은 소리로 동작해서 여기선 키와 글자 번역만 확인해요. 자막을 시작해서 확인하세요.)\n")
                 }
                 sb.append("제미나이: ")
                 val t0 = System.currentTimeMillis()
@@ -133,9 +221,8 @@ class Translators(private val ctx: Context) {
         history: List<String>,
         gl: List<Pair<String, String>>,
         onPartial: ((String) -> Unit)?,
+        hints: List<Pinyin.Hint> = emptyList(),
     ): String {
-        val context = history.joinToString("\n") + "\n" + zh
-        val used = gl.filter { context.contains(it.first) }
         val system = buildString {
             append("너는 중국어 영상의 실시간 자막 번역가다. 입력은 음성 인식 결과라서 ")
             append("오탈자나 발음이 비슷한 글자로 잘못 인식된 부분이 있을 수 있다. 앞 문맥을 참고해서 ")
@@ -143,10 +230,7 @@ class Translators(private val ctx: Context) {
             append("번역문만 출력하고 설명, 따옴표, 원문, 앞 문맥의 번역은 절대 쓰지 마라.")
             val topic = Prefs.topic(ctx)
             if (topic.isNotEmpty()) append("\n\n[지금 보는 영상의 내용]\n").append(topic)
-            if (used.isNotEmpty()) {
-                append("\n\n[용어집 - 아래 단어는 반드시 이렇게 번역]\n")
-                used.forEach { append(it.first).append(" → ").append(it.second).append('\n') }
-            }
+            append(glossaryBlock(gl))
         }
         val user = buildString {
             if (history.isNotEmpty()) {
@@ -155,22 +239,30 @@ class Translators(private val ctx: Context) {
                 append('\n')
             }
             append("[번역할 문장]\n").append(zh)
+            append(hintBlock(hints))
         }
         return gemini(system, user, onPartial != null, onPartial).trim().trim('"', '“', '”')
     }
 
     // 제미나이 호출. stream=true면 글자가 나오는 대로 onPartial로 알려줌.
     // '생각'을 가장 낮게 해서 빨리 답하게 함 (모델이 거부하면 빼고 다시 시도).
-    private fun gemini(system: String, user: String, stream: Boolean, onPartial: ((String) -> Unit)?): String {
+    private fun gemini(
+        system: String,
+        user: String,
+        stream: Boolean,
+        onPartial: ((String) -> Unit)?,
+        audioWav: ByteArray? = null,
+        json: Boolean = false,
+    ): String {
         val key = Prefs.geminiKey(ctx)
         if (key.isEmpty()) throw RuntimeException("API 키가 비어 있어요")
         val model = Prefs.geminiModel(ctx)
         val withThinking = !thinkingRejected.contains(model)
         return try {
-            geminiOnce(key, model, system, user, stream, onPartial, withThinking)
+            geminiOnce(key, model, system, user, stream, onPartial, withThinking, audioWav, json)
         } catch (e: ThinkingRejected) {
             thinkingRejected = HashSet(thinkingRejected).apply { add(model) }
-            geminiOnce(key, model, system, user, stream, onPartial, false)
+            geminiOnce(key, model, system, user, stream, onPartial, false, audioWav, json)
         }
     }
 
@@ -184,8 +276,11 @@ class Translators(private val ctx: Context) {
         stream: Boolean,
         onPartial: ((String) -> Unit)?,
         withThinking: Boolean,
+        audioWav: ByteArray? = null,
+        json: Boolean = false,
     ): String {
         val gen = JSONObject().put("temperature", 0.2)
+        if (json) gen.put("responseMimeType", "application/json")
         if (withThinking) {
             // Flash-Lite·3.6 Flash는 'minimal'이 가장 낮고, 3.8 Flash는 'low'가 가장 낮음
             val level = if (model.contains("3.8") && !model.contains("lite")) "low" else "minimal"
@@ -196,8 +291,21 @@ class Translators(private val ctx: Context) {
             .put(
                 "contents",
                 JSONArray().put(
-                    JSONObject().put("role", "user")
-                        .put("parts", JSONArray().put(JSONObject().put("text", user)))
+                    JSONObject().put("role", "user").put(
+                        "parts",
+                        JSONArray().apply {
+                            if (audioWav != null) {
+                                put(
+                                    JSONObject().put(
+                                        "inlineData", JSONObject()
+                                            .put("mimeType", "audio/wav")
+                                            .put("data", android.util.Base64.encodeToString(audioWav, android.util.Base64.NO_WRAP))
+                                    )
+                                )
+                            }
+                            put(JSONObject().put("text", user))
+                        }
+                    )
                 )
             )
             .put("generationConfig", gen)
@@ -206,7 +314,7 @@ class Translators(private val ctx: Context) {
         val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:$endpoint")
         val c = url.openConnection() as HttpURLConnection
         c.connectTimeout = 6000
-        c.readTimeout = 10000
+        c.readTimeout = if (audioWav != null) 15000 else 10000
         c.requestMethod = "POST"
         c.doOutput = true
         c.setRequestProperty("Content-Type", "application/json; charset=utf-8")

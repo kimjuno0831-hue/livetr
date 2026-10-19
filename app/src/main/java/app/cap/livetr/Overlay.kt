@@ -321,6 +321,12 @@ class Overlay(private val ctx: Context, private val onFix: ((Long, String, Strin
         wake()
     }
 
+    // 줄 지우기 (듣고 번역에서 중국어가 아니라고 판정된 말)
+    fun dropEntry(id: Long) = ui.post {
+        val e = entries.remove(id) ?: return@post
+        list.removeView(e.box)
+    }
+
     // 원문 줄만 바꾸기 (제미나이 통역 모드에서 원문이 조금씩 들어올 때)
     fun setOrig(id: Long, orig: String) = ui.post {
         val e = entries[id] ?: return@post

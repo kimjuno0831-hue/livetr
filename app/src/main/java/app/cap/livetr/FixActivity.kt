@@ -262,8 +262,8 @@ class FixActivity : Activity() {
             r.isEmpty() || r == c.zh -> "'${c.zh}'(으)로 저장할게요."
             Pinyin.fix(this, r, listOf(Pair(c.zh, ""))) == c.zh ->
                 "폰이 '$r'(으)로 받아 적었지만 발음이 같아요. 저장하면 다음부터 자동으로 '${c.zh}'(으)로 바로잡아요."
-            else -> "폰이 받아 적은 '$r'와 발음이 달라요. '${c.zh}'(으)로 저장하면, 같은 잘못 인식은 자동 교정이 안 될 수 있어요. " +
-                "그때는 '$r'도 따로 저장해두면 돼요."
+            else -> "폰이 받아 적은 '$r'는 발음이 조금 달라요. 저장하면 '$r'를 '${c.zh}'의 잘못 인식된 형태로도 같이 " +
+                "기억해서, 다음에 또 그렇게 들리면 잡아낼게요."
         }
     }
 
@@ -282,6 +282,9 @@ class FixActivity : Activity() {
         applyWorks()
         val where = target()
         Prefs.putEntry(this, where, z, k)
+        // 폰이 다르게 받아 적은 형태도 같이 기억 (같은 소리는 같은 식으로 틀리는 경우가 많음)
+        val r = recognizedPart
+        if (r.isNotEmpty() && r != z) Prefs.putAlias(this, where, r, z)
         val line = "$z=$k"
 
         // 이 줄 다시 번역 (발음 교정도 다시 적용)

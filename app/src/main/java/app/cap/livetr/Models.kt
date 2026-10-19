@@ -128,7 +128,7 @@ object Models {
         }
     }
 
-    fun create(ctx: Context, id: String): OfflineRecognizer {
+    fun create(ctx: Context, id: String, hotwords: String = ""): OfflineRecognizer {
         val s = spec(id)
         val feat = FeatureConfig(sampleRate = 16000, featureDim = 80)
         return when (s.id) {
@@ -144,6 +144,7 @@ object Models {
                                 llm = "$d/llm.int8.onnx",
                                 embedding = "$d/embedding.int8.onnx",
                                 tokenizer = "$d/Qwen3-0.6B",
+                                hotwords = hotwords,
                             ),
                             tokens = "",
                             numThreads = 4,
@@ -178,16 +179,18 @@ object Asr {
     private var rec: OfflineRecognizer? = null
     private var recId = ""
 
+    // hotwords가 바뀌면(용어집이 바뀐 Fun-ASR Nano) 다시 불러옴
     @Synchronized
-    fun get(ctx: Context, id: String): OfflineRecognizer {
+    fun get(ctx: Context, id: String, hotwords: String = ""): OfflineRecognizer {
+        val key = "$id|$hotwords"
         val cur = rec
-        if (cur != null && recId == id) return cur
+        if (cur != null && recId == key) return cur
         cur?.release()
         rec = null
         recId = ""
-        val r = Models.create(ctx.applicationContext, id)
+        val r = Models.create(ctx.applicationContext, id, hotwords)
         rec = r
-        recId = id
+        recId = key
         return r
     }
 }

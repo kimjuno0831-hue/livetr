@@ -9,6 +9,10 @@ object Prefs {
     const val ENGINE_GEMINI = "gemini"
     const val ENGINE_MLKIT = "mlkit"
     const val ENGINE_LIVE = "live"   // 제미나이 통역 (소리를 바로 번역)
+    const val ENGINE_HEAR = "hear"   // 제미나이 듣고 번역 (말소리 조각 + 용어집·문맥)
+
+    // 맥락을 보고 판단할 수 있는 제미나이 계열 번역기인지
+    fun geminiFamily(engine: String) = engine == ENGINE_GEMINI || engine == ENGINE_LIVE || engine == ENGINE_HEAR
     const val DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
     fun get(ctx: Context): SharedPreferences =
@@ -88,7 +92,7 @@ object Prefs {
     fun removeWork(ctx: Context, name: String) {
         putList(ctx, "works", works(ctx).filter { it != name })
         putList(ctx, "activeWorks", activeWorks(ctx).filter { it != name })
-        get(ctx).edit().remove("gl:$name").apply()
+        get(ctx).edit().remove("gl:$name").remove("al:$name").apply()
     }
 
     fun setActive(ctx: Context, name: String, on: Boolean) {
@@ -139,6 +143,30 @@ object Prefs {
                 val ko = it.substring(i + 1).trim()
                 if (zh.isEmpty() || ko.isEmpty()) null else Pair(zh, ko)
             }
+
+    // ── 잘못 인식된 형태 기억 (예: 安米安>阿米娅) ──
+    // 폰 음성 인식이 같은 이름을 같은 식으로 틀리는 경우가 많아서, 고치기 할 때 자동으로 같이 저장함
+    private fun aliasKey(work: String?) = if (work == null) "aliases" else "al:$work"
+
+    fun putAlias(ctx: Context, work: String?, wrong: String, right: String) {
+        if (wrong.isEmpty() || wrong == right || wrong.contains('>') || wrong.contains('\n')) return
+        val lines = (get(ctx).getString(aliasKey(work), "") ?: "").lines()
+            .filter { it.isNotBlank() && it.substringBefore('>') != wrong }.toMutableList()
+        lines.add("$wrong>$right")
+        get(ctx).edit().putString(aliasKey(work), lines.joinToString("\n")).apply()
+    }
+
+    // 공통 + 지금 보는 작품들. 결과: (잘못 인식된 형태, 올바른 중국어). 긴 것부터.
+    fun aliases(ctx: Context): List<Pair<String, String>> {
+        val m = LinkedHashMap<String, String>()
+        (listOf<String?>(null) + activeWorks(ctx)).forEach { w ->
+            (get(ctx).getString(aliasKey(w), "") ?: "").lines().forEach { l ->
+                val i = l.indexOf('>')
+                if (i > 0 && i < l.length - 1) m[l.substring(0, i).trim()] = l.substring(i + 1).trim()
+            }
+        }
+        return m.entries.map { Pair(it.key, it.value) }.sortedByDescending { it.first.length }
+    }
 
     // 실제 번역에 쓰는 용어집: 공통 + 지금 보는 작품들 (작품 쪽이 우선). 긴 단어부터.
     fun glossary(ctx: Context): List<Pair<String, String>> {

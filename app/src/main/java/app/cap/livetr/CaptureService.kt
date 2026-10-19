@@ -54,7 +54,10 @@ class CaptureService : Service() {
     @Volatile private var destroyed = false
 
     private val segQueue = LinkedBlockingQueue<FloatArray>()
-    private val trQueue = LinkedBlockingQueue<Pair<Long, String>>()
+    // 번역할 일: 자막 줄 번호, 중국어, 인식 오류 의심 힌트, (듣고 번역용) 말소리
+    private class TrJob(val id: Long, val zh: String, val hints: List<Pinyin.Hint>, val audio: FloatArray?)
+    private val trQueue = LinkedBlockingQueue<TrJob>()
+    @Volatile private var prevTail = ""   // 바로 앞 줄 끝 글자 (줄 경계에 걸린 이름 찾기용)
 
     // 지금 말하는 중인 소리 (아직 문장이 안 끊긴 부분) — 미리 보기용
     private val liveLock = Any()
@@ -92,7 +95,7 @@ class CaptureService : Service() {
             if (projection == null) stopSelf()
             else if (id >= 0 && zh.isNotEmpty()) {
                 overlay?.setOrig(id, zh)
-                trQueue.offer(Pair(id, zh))
+                trQueue.offer(TrJob(id, zh, hintsFor(zh, ""), null))
             }
             return START_NOT_STICKY
         }
@@ -110,6 +113,7 @@ class CaptureService : Service() {
         val my = ++session
         segQueue.clear()
         trQueue.clear()
+        prevTail = ""
         projection?.let { old ->
             projection = null
             try { old.stop() } catch (_: Exception) {}
@@ -440,7 +444,11 @@ class CaptureService : Service() {
                 return
             }
             overlay?.info("인식 모델 불러오는 중… (처음엔 몇 초~수십 초)")
-            val rec = Asr.get(this, modelId)
+            // Fun-ASR Nano는 용어집 중국어 이름을 '힌트 단어'로 받아서 처음부터 맞게 받아 적을 수 있음 (최대 30개)
+            val hot = if (modelId == Models.FUNNANO) {
+                Prefs.glossary(this).map { it.first }.filter { it.length >= 2 }.take(30).joinToString(",")
+            } else ""
+            val rec = Asr.get(this, modelId, hot)
             if (!alive(my)) return
             val detects = Models.spec(modelId).detectsLanguage
             report(force = true)
@@ -511,12 +519,21 @@ class CaptureService : Service() {
                     }
                 }
 
-                // 용어집 단어가 발음만 같은 다른 글자로 적혔으면 번역 전에 바로잡기
-                val fixed = if (Prefs.pinyinFix(this)) Pinyin.fix(this, text, Prefs.glossary(this)) else text
+                // 용어집 이름이 잘못 인식된 곳 처리
+                // · 제미나이 계열: 직접 바꾸지 않고 '의심 힌트'로 넘겨서, 제미나이가 맥락 보고 판단
+                // · 구글·기기 번역: 맥락 판단을 못 하니, 직접 확인한 잘못 인식 형태 + 발음이 완전히 같은 것만 바로 교체
+                val engine = Prefs.engine(this)
+                val gemini = Prefs.geminiFamily(engine)
+                val fixed = if (gemini) text else {
+                    val a = Pinyin.applyAliases(text, Prefs.aliases(this))
+                    if (Prefs.pinyinFix(this)) Pinyin.fix(this, a, Prefs.glossary(this)) else a
+                }
+                val hints = if (gemini) hintsFor(fixed, prevTail) else emptyList()
+                prevTail = fixed.takeLast(3)
                 val id = overlay?.add(fixed) ?: continue
                 nShown++
                 report()
-                trQueue.offer(Pair(id, fixed))
+                trQueue.offer(TrJob(id, fixed, hints, if (engine == Prefs.ENGINE_HEAR) seg else null))
             }
         } catch (e: Throwable) {
             if (alive(my)) overlay?.error("오류(음성 인식): ${e.message}")
@@ -529,26 +546,40 @@ class CaptureService : Service() {
         val history = ArrayDeque<String>()
         try {
             while (alive(my)) {
-                val (id, zh) = trQueue.poll(300, TimeUnit.MILLISECONDS) ?: continue
+                val job = trQueue.poll(300, TimeUnit.MILLISECONDS) ?: continue
+                val id = job.id
                 // 제미나이 번역은 글자가 나오는 대로 바로 채움 (화면 갱신은 0.15초에 한 번까지만)
                 var lastPaint = 0L
-                val (ko, used) = try {
-                    tr.translate(zh, history.toList()) { partial ->
+                val res = try {
+                    tr.translate(job.zh, history.toList(), { partial ->
                         val now = SystemClock.uptimeMillis()
                         if (now - lastPaint > 150) {
                             lastPaint = now
                             overlay?.update(id, "$partial …", "")
                         }
-                    }
+                    }, job.hints, job.audio)
                 } catch (e: Exception) {
-                    Pair("(번역 실패: ${e.message})", "")
+                    Translators.Result("(번역 실패: ${e.message})", "")
                 }
+                // 듣고 번역: 제미나이가 중국어가 아니라고 하면 그 줄은 지움
+                val lang = res.lang
+                if (lang != null && lang != "zh" && lang != "yue" && Prefs.onlyChinese(this)) {
+                    overlay?.dropEntry(id)
+                    nShown = maxOf(0, nShown - 1)
+                    nHidden++
+                    report()
+                    continue
+                }
+                // 듣고 번역: 제미나이가 다시 받아 적은 중국어로 원문 줄 교체
+                val zh = res.zh ?: job.zh
+                if (res.zh != null && res.zh != job.zh) overlay?.setOrig(id, zh)
                 val chosen = when (Prefs.engine(this)) {
+                    Prefs.ENGINE_HEAR -> "제미나이(듣기)"
                     Prefs.ENGINE_GEMINI, Prefs.ENGINE_LIVE -> "제미나이"
                     Prefs.ENGINE_GOOGLE -> "구글"
                     else -> "기기번역"
                 }
-                overlay?.update(id, ko, if (used.isNotEmpty() && used != chosen) "↩$used" else "")
+                overlay?.update(id, res.ko, if (res.used.isNotEmpty() && res.used != chosen) "↩${res.used}" else "")
                 history.addLast(zh)
                 while (history.size > 4) history.removeFirst()
             }
@@ -586,6 +617,9 @@ class CaptureService : Service() {
         val i = t.lastIndexOf(' ')
         return if (i > t.length / 2) t.substring(0, i) else t
     }
+
+    private fun hintsFor(text: String, tail: String): List<Pinyin.Hint> =
+        runCatching { Pinyin.hints(this, text, tail, Prefs.glossary(this), Prefs.aliases(this)) }.getOrElse { emptyList() }
 
     private fun openFix(id: Long, zh: String, ko: String, around: List<String>) {
         val i = Intent(this, FixActivity::class.java)
