@@ -33,6 +33,7 @@ class CaptureService : Service() {
     companion object {
         const val CH = "livetr"
         const val ACTION_STOP = "app.cap.livetr.STOP"
+        const val ACTION_RETRANSLATE = "app.cap.livetr.RETRANSLATE"
         const val SR = 16000
 
         // 앱 전체에서 아직 살아 있는 작업 스레드 수 (껐다 바로 켤 때 이전 작업이 끝나길 기다리는 데 씀)
@@ -70,6 +71,11 @@ class CaptureService : Service() {
     @Volatile private var captureNote = ""
     @Volatile private var lastNotify = 0L
 
+    // 미리 번역: 가장 최근 미리 보기 중국어만 번역 (오래된 건 건너뜀)
+    private val previewLock = Any()
+    private var previewZh: String? = null
+    @Volatile private var previewGen = 0   // 확정 자막이 나올 때마다 올라감 → 늦게 온 미리 번역은 버림
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun alive(my: Int) = !destroyed && session == my
@@ -77,6 +83,14 @@ class CaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             stopSelf()
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_RETRANSLATE) {
+            // 번역 고치기 화면에서 저장 → 그 줄을 새 용어집으로 다시 번역
+            val id = intent.getLongExtra("id", -1)
+            val zh = intent.getStringExtra("zh") ?: ""
+            if (projection == null) stopSelf()
+            else if (id >= 0 && zh.isNotEmpty()) trQueue.offer(Pair(id, zh))
             return START_NOT_STICKY
         }
         startAsForeground("준비 중…")
@@ -108,7 +122,7 @@ class CaptureService : Service() {
             }
         }, ui)
 
-        val ov = overlay ?: Overlay(this).also { overlay = it; it.attach() }
+        val ov = overlay ?: Overlay(this) { id, zh, ko -> openFix(id, zh, ko) }.also { overlay = it; it.attach() }
         ov.clearError()
         live?.close()
         live = null
@@ -126,7 +140,8 @@ class CaptureService : Service() {
             if (activeWorkers.get() > 0) ov.info("이전 작업 정리 중…")
             while (activeWorkers.get() > 0 && SystemClock.uptimeMillis() < deadline) Thread.sleep(100)
             if (!alive(my)) return@thread
-            activeWorkers.addAndGet(if (liveMode) 4 else 3)
+            activeWorkers.addAndGet(if (liveMode) 5 else 4)
+            thread(name = "preview-$my") { try { previewLoop(my) } finally { activeWorkers.decrementAndGet() } }
             if (liveMode) {
                 thread(name = "live-$my") { try { liveLoop(my) } finally { activeWorkers.decrementAndGet() } }
             }
@@ -455,7 +470,10 @@ class CaptureService : Service() {
                             val plang = pr.lang.replace("<|", "").replace("|>", "").trim()
                             val skip = Prefs.onlyChinese(this) &&
                                 ((plang.isNotEmpty() && plang != "zh" && plang != "yue") || hangul.containsMatchIn(pt))
-                            if (pt.isNotEmpty() && !skip) overlay?.live(pt)
+                            if (pt.isNotEmpty() && !skip) {
+                                overlay?.live(pt)
+                                if (Prefs.partialTr(this)) synchronized(previewLock) { previewZh = pt }
+                            }
                         } else if (n == 0 && lastPartialAt != 0) {
                             lastPartialAt = 0
                         }
@@ -463,6 +481,8 @@ class CaptureService : Service() {
                     continue
                 }
                 lastPartialAt = 0
+                previewGen++
+                synchronized(previewLock) { previewZh = null }
                 while (segQueue.size > 3) segQueue.poll()   // 너무 밀리면 오래된 건 버림
 
                 val stream = rec.createStream()
@@ -504,8 +524,16 @@ class CaptureService : Service() {
         try {
             while (alive(my)) {
                 val (id, zh) = trQueue.poll(300, TimeUnit.MILLISECONDS) ?: continue
+                // 제미나이 번역은 글자가 나오는 대로 바로 채움 (화면 갱신은 0.15초에 한 번까지만)
+                var lastPaint = 0L
                 val (ko, used) = try {
-                    tr.translate(zh, history.toList())
+                    tr.translate(zh, history.toList()) { partial ->
+                        val now = SystemClock.uptimeMillis()
+                        if (now - lastPaint > 150) {
+                            lastPaint = now
+                            overlay?.update(id, "$partial …", "")
+                        }
+                    }
                 } catch (e: Exception) {
                     Pair("(번역 실패: ${e.message})", "")
                 }
@@ -521,6 +549,45 @@ class CaptureService : Service() {
         } finally {
             tr.close()
         }
+    }
+
+    // 말하는 도중 미리 번역 (구글, 1.2초에 한 번까지, 끝부분은 바뀌기 쉬워서 숨김)
+    private fun previewLoop(my: Int) {
+        val tr = Translators(applicationContext)
+        var lastAt = 0L
+        try {
+            while (alive(my)) {
+                Thread.sleep(150)
+                if (liveMode) continue
+                val now = SystemClock.uptimeMillis()
+                if (now - lastAt < 1200) continue
+                val zh = synchronized(previewLock) { previewZh.also { previewZh = null } } ?: continue
+                lastAt = now
+                val gen = previewGen
+                val ko = tr.preview(zh) ?: continue
+                if (gen != previewGen || !alive(my)) continue   // 그 사이 문장이 확정됐으면 버림
+                overlay?.live(zh, maskTail(ko))
+            }
+        } finally {
+            tr.close()
+        }
+    }
+
+    // 문장 끝을 아직 못 들었으니 마지막 한 단어는 숨겨서 글자가 덜 출렁이게
+    private fun maskTail(ko: String): String {
+        val t = ko.trim()
+        if (t.length < 8 || ".?!。？！".indexOf(t.last()) >= 0) return t
+        val i = t.lastIndexOf(' ')
+        return if (i > t.length / 2) t.substring(0, i) else t
+    }
+
+    private fun openFix(id: Long, zh: String, ko: String) {
+        val i = Intent(this, FixActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra("id", id)
+            .putExtra("zh", zh)
+            .putExtra("ko", ko)
+        try { startActivity(i) } catch (_: Exception) {}
     }
 
     override fun onDestroy() {

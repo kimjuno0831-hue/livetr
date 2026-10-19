@@ -37,6 +37,9 @@ object Prefs {
 
     // 말하는 도중 중국어 미리 보여주기
     fun partial(ctx: Context) = get(ctx).getBoolean("partial", true)
+
+    // 말하는 도중 미리 번역 (구글 번역으로)
+    fun partialTr(ctx: Context) = get(ctx).getBoolean("partialTr", true)
     fun glossaryText(ctx: Context) = get(ctx).getString("glossary", "") ?: ""
 
     // "原神=원신" 형식의 줄들을 (중국어, 한국어) 목록으로. 긴 단어부터.

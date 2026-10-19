@@ -15,15 +15,25 @@ import java.net.URLEncoder
 
 // 번역 담당. 결과: (번역문, 실제로 쓴 번역기 이름)
 class Translators(private val ctx: Context) {
+    companion object {
+        // 이 모델이 '생각 정도' 설정을 거부하면 다음부턴 빼고 보냄 (앱이 켜져 있는 동안 기억)
+        @Volatile private var thinkingRejected = HashSet<String>()
+    }
+
     private var mlkit: Translator? = null
 
-    fun translate(zh: String, history: List<String>): Pair<String, String> {
+    // onPartial: 제미나이 번역이 글자 단위로 흘러들어올 때마다 지금까지의 번역을 알려줌
+    fun translate(
+        zh: String,
+        history: List<String>,
+        onPartial: ((String) -> Unit)? = null,
+    ): Pair<String, String> {
         val engine = Prefs.engine(ctx)
         val gl = Prefs.glossary(ctx)
         // 통역 모드가 실패해서 기본 방식으로 넘어왔을 때도 같은 키로 제미나이 번역
         if (engine == Prefs.ENGINE_GEMINI || engine == Prefs.ENGINE_LIVE) {
             try {
-                return Pair(gemini(zh, history, gl), "제미나이")
+                return Pair(geminiTranslate(zh, history, gl, onPartial), "제미나이")
             } catch (_: Exception) {
                 // 실패하면 구글 번역으로 대신함
             }
@@ -38,6 +48,21 @@ class Translators(private val ctx: Context) {
         return Pair(mlkit(applyGlossary(zh, gl)), "기기번역")
     }
 
+    // 말하는 도중 미리 보기용 빠른 번역. 한도 걱정 없는 구글 번역만 씀 (기기번역 모드면 안 함)
+    fun preview(zh: String): String? {
+        if (Prefs.engine(ctx) == Prefs.ENGINE_MLKIT) return null
+        return runCatching { google(applyGlossary(zh, Prefs.glossary(ctx))) }.getOrNull()
+    }
+
+    // 번역 고치기 화면용: 번역문의 어떤 단어가 원문의 어느 중국어에서 나왔는지 찾기
+    fun findSource(zh: String, ko: String, word: String): String {
+        val system = "너는 중국어-한국어 번역 정렬 도우미다. 주어진 중국어 원문과 한국어 번역에서, " +
+            "지정한 한국어 단어가 번역된 원문 부분을 찾아라. 원문에 실제로 있는 연속된 글자를 그대로, " +
+            "그 부분만 출력하라. 설명이나 따옴표는 쓰지 마라."
+        val user = "[중국어 원문]\n$zh\n\n[한국어 번역]\n$ko\n\n[찾을 한국어 단어]\n$word"
+        return gemini(system, user, false, null).trim().trim('"', '“', '”', '「', '」')
+    }
+
     // 설정 화면의 [번역 테스트]용: 실패하면 이유를 그대로 보여줌
     fun test(zh: String): String {
         val gl = Prefs.glossary(ctx)
@@ -48,7 +73,9 @@ class Translators(private val ctx: Context) {
                     sb.append("(제미나이 통역은 소리로만 동작해서 여기선 키만 확인해요. 자막을 시작해서 확인하세요.)\n")
                 }
                 sb.append("제미나이: ")
-                sb.append(runCatching { gemini(zh, emptyList(), gl) }.getOrElse { "실패 - ${it.message}" })
+                val t0 = System.currentTimeMillis()
+                sb.append(runCatching { geminiTranslate(zh, emptyList(), gl, null) }.getOrElse { "실패 - ${it.message}" })
+                sb.append("  (${System.currentTimeMillis() - t0}ms)")
                 sb.append("\n구글(대체용): ")
                 sb.append(runCatching { google(applyGlossary(zh, gl)) }.getOrElse { "실패 - ${it.message}" })
             }
@@ -98,11 +125,12 @@ class Translators(private val ctx: Context) {
         }
     }
 
-    private fun gemini(zh: String, history: List<String>, gl: List<Pair<String, String>>): String {
-        val key = Prefs.geminiKey(ctx)
-        if (key.isEmpty()) throw RuntimeException("API 키가 비어 있어요")
-        val model = Prefs.geminiModel(ctx)
-
+    private fun geminiTranslate(
+        zh: String,
+        history: List<String>,
+        gl: List<Pair<String, String>>,
+        onPartial: ((String) -> Unit)?,
+    ): String {
         val context = history.joinToString("\n") + "\n" + zh
         val used = gl.filter { context.contains(it.first) }
         val system = buildString {
@@ -123,11 +151,43 @@ class Translators(private val ctx: Context) {
             }
             append("[번역할 문장]\n").append(zh)
         }
+        return gemini(system, user, onPartial != null, onPartial).trim().trim('"', '“', '”')
+    }
+
+    // 제미나이 호출. stream=true면 글자가 나오는 대로 onPartial로 알려줌.
+    // '생각'을 가장 낮게 해서 빨리 답하게 함 (모델이 거부하면 빼고 다시 시도).
+    private fun gemini(system: String, user: String, stream: Boolean, onPartial: ((String) -> Unit)?): String {
+        val key = Prefs.geminiKey(ctx)
+        if (key.isEmpty()) throw RuntimeException("API 키가 비어 있어요")
+        val model = Prefs.geminiModel(ctx)
+        val withThinking = !thinkingRejected.contains(model)
+        return try {
+            geminiOnce(key, model, system, user, stream, onPartial, withThinking)
+        } catch (e: ThinkingRejected) {
+            thinkingRejected = HashSet(thinkingRejected).apply { add(model) }
+            geminiOnce(key, model, system, user, stream, onPartial, false)
+        }
+    }
+
+    private class ThinkingRejected : Exception()
+
+    private fun geminiOnce(
+        key: String,
+        model: String,
+        system: String,
+        user: String,
+        stream: Boolean,
+        onPartial: ((String) -> Unit)?,
+        withThinking: Boolean,
+    ): String {
+        val gen = JSONObject().put("temperature", 0.2)
+        if (withThinking) {
+            // Flash-Lite·3.6 Flash는 'minimal'이 가장 낮고, 3.8 Flash는 'low'가 가장 낮음
+            val level = if (model.contains("3.8") && !model.contains("lite")) "low" else "minimal"
+            gen.put("thinkingConfig", JSONObject().put("thinkingLevel", level))
+        }
         val req = JSONObject()
-            .put(
-                "systemInstruction",
-                JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system)))
-            )
+            .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
             .put(
                 "contents",
                 JSONArray().put(
@@ -135,9 +195,10 @@ class Translators(private val ctx: Context) {
                         .put("parts", JSONArray().put(JSONObject().put("text", user)))
                 )
             )
-            .put("generationConfig", JSONObject().put("temperature", 0.2))
+            .put("generationConfig", gen)
 
-        val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
+        val endpoint = if (stream) "streamGenerateContent?alt=sse" else "generateContent"
+        val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:$endpoint")
         val c = url.openConnection() as HttpURLConnection
         c.connectTimeout = 6000
         c.readTimeout = 10000
@@ -153,6 +214,7 @@ class Translators(private val ctx: Context) {
                 val msg = runCatching {
                     JSONObject(err).getJSONObject("error").getString("message")
                 }.getOrDefault(err.take(150))
+                if (code == 400 && withThinking && msg.lowercase().contains("think")) throw ThinkingRejected()
                 val hint = when (code) {
                     429 -> " (무료 한도 초과 - 잠시 후 다시)"
                     400, 403 -> " (키 또는 모델 이름 확인)"
@@ -161,20 +223,41 @@ class Translators(private val ctx: Context) {
                 }
                 throw RuntimeException("HTTP $code$hint $msg")
             }
-            val body = c.inputStream.bufferedReader().use { it.readText() }
-            val parts = JSONObject(body).getJSONArray("candidates").getJSONObject(0)
-                .getJSONObject("content").getJSONArray("parts")
             val sb = StringBuilder()
-            for (i in 0 until parts.length()) {
-                val p = parts.getJSONObject(i)
-                if (!p.optBoolean("thought", false)) sb.append(p.optString("text"))
+            if (stream) {
+                // 서버가 "data: {...}" 줄을 조금씩 보내줌
+                c.inputStream.bufferedReader().useLines { lines ->
+                    for (line in lines) {
+                        if (!line.startsWith("data:")) continue
+                        val json = runCatching { JSONObject(line.substring(5).trim()) }.getOrNull() ?: continue
+                        val added = textOf(json)
+                        if (added.isNotEmpty()) {
+                            sb.append(added)
+                            onPartial?.invoke(sb.toString().trim())
+                        }
+                    }
+                }
+            } else {
+                val body = c.inputStream.bufferedReader().use { it.readText() }
+                sb.append(textOf(JSONObject(body)))
             }
-            val out = sb.toString().trim().trim('"', '“', '”')
+            val out = sb.toString().trim()
             if (out.isEmpty()) throw RuntimeException("빈 결과")
             return out
         } finally {
             c.disconnect()
         }
+    }
+
+    private fun textOf(o: JSONObject): String {
+        val parts = o.optJSONArray("candidates")?.optJSONObject(0)
+            ?.optJSONObject("content")?.optJSONArray("parts") ?: return ""
+        val sb = StringBuilder()
+        for (i in 0 until parts.length()) {
+            val p = parts.optJSONObject(i) ?: continue
+            if (!p.optBoolean("thought", false)) sb.append(p.optString("text"))
+        }
+        return sb.toString()
     }
 
     private fun mlkit(zh: String): String {

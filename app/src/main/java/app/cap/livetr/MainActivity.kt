@@ -91,11 +91,14 @@ class MainActivity : Activity() {
         col.addView(title("번역기"))
         engineGroup = RadioGroup(this)
         engineGroup.addView(RadioButton(this).apply { id = 101; text = "구글 번역 (무료, 키 필요 없음)" })
-        engineGroup.addView(RadioButton(this).apply { id = 102; text = "제미나이 AI (무료 키 필요, 가장 자연스러움)" })
+        engineGroup.addView(RadioButton(this).apply {
+            id = 102
+            text = "제미나이 번역 — 폰이 받아 적은 글자를 제미나이가 번역. 용어집 적용 (무료 키 필요)"
+        })
         engineGroup.addView(RadioButton(this).apply { id = 103; text = "기기 안 번역 (인터넷 없이, 품질 낮음)" })
         engineGroup.addView(RadioButton(this).apply {
             id = 104
-            text = "제미나이 통역 (실험) — 소리를 바로 통역해서 가장 빠름. 제미나이 키 필요, 용어집 미적용"
+            text = "제미나이 통역 (실험) — 소리를 제미나이가 바로 통역. 가장 빠름, 용어집 미적용 (무료 키 필요)"
         })
         engineGroup.check(
             when (Prefs.engine(this)) {
@@ -182,6 +185,7 @@ class MainActivity : Activity() {
         segGroup.setOnCheckedChangeListener { _, id -> p.edit().putString("segLen", segKeys[id - 301]).apply() }
         col.addView(segGroup)
         col.addView(check("말하는 도중에 중국어 미리 보여주기 (▸ 줄, 폰이 뜨거워지면 끄세요)", "partial", true))
+        col.addView(check("미리 보기 줄도 한국어로 미리 번역 (구글 번역 사용, 확정되면 바뀜)", "partialTr", true))
         col.addView(check("중국어만 자막으로 (한국어 등 다른 말은 숨김)", "onlyChinese", true))
         col.addView(check("빌리빌리 앱 소리만 잡기 (브라우저로 볼 땐 끄세요)", "biliOnly", true))
         col.addView(check("중국어 원문도 같이 보기 (자막 창의 原 버튼으로도 전환)", "showOrig", true))
@@ -202,10 +206,11 @@ class MainActivity : Activity() {
         })
         col.addView(note(
             "자막 창 사용법\n" +
-                "· 위쪽 ≡ 를 끌면 창이 이동해요.\n" +
+                "· 맨 위 줄 아무 데나 끌면 창이 이동해요.\n" +
                 "· 오른쪽 아래 ◢ 를 끌면 창 크기가 바뀌어요.\n" +
                 "· 창 안을 위아래로 밀면 지난 자막을 볼 수 있어요.\n" +
                 "· 原 버튼으로 원문을 켜고 끌 수 있어요.\n" +
+                "· 자막 줄을 길게 누르면 번역을 고쳐서 용어집에 저장할 수 있어요.\n" +
                 "· 말이 한동안 없으면 창이 흐려져요."
         ))
         col.addView(Button(this).apply {
@@ -220,6 +225,13 @@ class MainActivity : Activity() {
 
         // 예전 버전에서 따로 받아둔 SenseVoice 2025 파일 정리 (이제 앱에 내장)
         thread { runCatching { Models.cleanupOld(applicationContext) } }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 자막 창의 '번역 고치기'로 용어집이 바뀌었을 수 있으니 다시 불러옴
+        val g = Prefs.glossaryText(this)
+        if (glossaryBox.text.toString() != g) glossaryBox.setText(g)
     }
 
     override fun onPause() {

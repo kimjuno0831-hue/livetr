@@ -22,7 +22,8 @@ import android.widget.TextView
 // · 말하는 도중에는 맨 아래에 중국어를 미리 보여줌 (▸ 줄)
 // · 말이 한동안 없으면 흐려짐
 // · '위치 잠금'이면 터치가 전부 영상으로 통과
-class Overlay(private val ctx: Context) {
+// onFix: 자막 줄을 길게 누르면 (줄 번호, 중국어, 한국어)로 불림 → 번역 고치기 화면
+class Overlay(private val ctx: Context, private val onFix: ((Long, String, String) -> Unit)? = null) {
     private val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val ui = Handler(Looper.getMainLooper())
 
@@ -37,7 +38,15 @@ class Overlay(private val ctx: Context) {
     private val liveView = TextView(ctx)
     private val resizer = TextView(ctx)
 
-    private class Entry(val box: LinearLayout, val orig: TextView, val tr: TextView, var origText: String)
+    private class Entry(
+        val id: Long,
+        val box: LinearLayout,
+        val orig: TextView,
+        val tr: TextView,
+        var origText: String,   // 화면에 보이는 원문 (↩구글 같은 표시 포함)
+        var rawZh: String,      // 순수 중국어 원문
+        var ko: String = "",    // 순수 번역문
+    )
     private val entries = LinkedHashMap<Long, Entry>()
     private var nextId = 1L
     private var follow = true
@@ -212,14 +221,23 @@ class Overlay(private val ctx: Context) {
     fun clearError() = ui.post { errorText = null }
 
     // ── 말하는 도중 미리 보기 줄 ──
-    fun live(text: String) = ui.post {
+    // zh: 지금까지 들은 중국어, ko: 미리 번역 (없으면 빈 문자열)
+    fun live(zh: String, ko: String = "") = ui.post {
         if (!added) return@post
-        if (text.isEmpty()) {
+        if (zh.isEmpty() && ko.isEmpty()) {
             liveView.visibility = View.GONE
             return@post
         }
         liveView.textSize = Prefs.textSize(ctx) * 0.8f
-        liveView.text = "▸ $text"
+        val showZh = Prefs.showOrig(ctx) || ko.isEmpty()
+        liveView.text = buildString {
+            append("▸ ")
+            if (showZh) append(zh)
+            if (ko.isNotEmpty()) {
+                if (showZh) append("\n   ")
+                append(ko).append(" …")
+            }
+        }
         liveView.visibility = View.VISIBLE
         if (follow) scrollToEnd()
         wake()
@@ -250,7 +268,13 @@ class Overlay(private val ctx: Context) {
             }
             box.addView(o)
             box.addView(t)
-            val e = Entry(box, o, t, orig)
+            val e = Entry(id, box, o, t, orig, orig)
+            // 길게 누르면 이 줄의 번역 고치기
+            box.isLongClickable = true
+            box.setOnLongClickListener {
+                if (e.ko.isNotEmpty() && e.ko != "…") onFix?.invoke(e.id, e.rawZh, e.ko)
+                true
+            }
             entries[id] = e
             fill(e)
             val wasFollowing = follow || entries.size <= 1
@@ -268,6 +292,7 @@ class Overlay(private val ctx: Context) {
 
     fun update(id: Long, tr: String, tag: String) = ui.post {
         val e = entries[id] ?: return@post
+        e.ko = tr
         e.tr.text = splitForReading(tr)
         if (tag.isNotEmpty()) e.origText = "${e.origText}   $tag"
         fill(e)
@@ -279,6 +304,7 @@ class Overlay(private val ctx: Context) {
     fun setOrig(id: Long, orig: String) = ui.post {
         val e = entries[id] ?: return@post
         e.origText = orig
+        e.rawZh = orig
         fill(e)
         if (follow) scrollToEnd()
     }
