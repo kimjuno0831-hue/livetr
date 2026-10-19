@@ -11,6 +11,8 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -18,7 +20,7 @@ import kotlin.concurrent.thread
 
 // 자막 줄을 길게 눌렀을 때 뜨는 "번역 고치기" 창
 // ① 번역문에서 틀린 단어 선택 → 원문의 어느 중국어인지 찾기 (폰이 받아 적은 글자 기준)
-// ② 원하는 한국어 이름으로 '올바른' 중국어 표기 찾기: 위키 → 제미나이 추측 → 웹 검색
+// ② 원하는 한국어 이름으로 '올바른' 중국어 표기 찾기: 지금 보는 작품 + 이름으로 웹 검색 → 제미나이가 읽고 후보·근거
 // ③ 저장 → 용어집에 올바른 중국어로 저장, 그 줄 다시 번역
 //    (폰이 발음은 같은 다른 글자로 받아 적어도 다음부터 발음 기준으로 자동 교정됨)
 class FixActivity : Activity() {
@@ -28,6 +30,8 @@ class FixActivity : Activity() {
     private lateinit var koField: EditText
     private lateinit var info: TextView
     private lateinit var candBox: LinearLayout
+    private lateinit var workField: EditText
+    private lateinit var targetGroup: RadioGroup
     private var id = -1L
     private var zh = ""
     private var ko = ""
@@ -83,7 +87,14 @@ class FixActivity : Activity() {
             inputType = InputType.TYPE_CLASS_TEXT
         }
         col.addView(koField)
-        col.addView(button("② 이 이름의 올바른 중국어 표기 찾기 (위키 → 제미나이)") { lookup() })
+        col.addView(label("지금 보는 작품 (여러 개면 쉼표로)"))
+        workField = EditText(this).apply {
+            setSingleLine(true)
+            setText(Prefs.topic(this@FixActivity))
+            hint = "예) 림버스 컴퍼니"
+        }
+        col.addView(workField)
+        col.addView(button("② 이 작품에서의 올바른 중국어 표기 찾기 (웹 검색 + 제미나이)") { lookup() })
         candBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         col.addView(candBox)
         val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -109,6 +120,11 @@ class FixActivity : Activity() {
         }
         col.addView(zhField)
 
+        col.addView(label("어느 용어집에 저장할까요?"))
+        targetGroup = RadioGroup(this)
+        col.addView(targetGroup)
+        refreshTargets()
+
         info = TextView(this).apply {
             textSize = 13f
             setTextColor(Color.GRAY)
@@ -126,6 +142,30 @@ class FixActivity : Activity() {
 
         setContentView(ScrollView(this).apply { addView(col) })
         window?.setLayout((resources.displayMetrics.widthPixels * 0.95f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+
+    // 저장 대상: 공통 + 지금 보는 작품들 (작품이 있으면 첫 작품이 기본)
+    private fun refreshTargets() {
+        targetGroup.removeAllViews()
+        val works = Prefs.activeWorks(this)
+        targetGroup.addView(RadioButton(this).apply { id = 900; text = "공통 용어집" })
+        works.forEachIndexed { i, w -> targetGroup.addView(RadioButton(this).apply { id = 901 + i; text = "$w 용어집" }) }
+        targetGroup.check(if (works.isNotEmpty()) 901 else 900)
+    }
+
+    private fun target(): String? {
+        val works = Prefs.activeWorks(this)
+        val i = targetGroup.checkedRadioButtonId - 901
+        return if (i in works.indices) works[i] else null
+    }
+
+    // 작품 칸에 적은 작품을 등록하고 '지금 보는 작품'으로 선택
+    private fun applyWorks() {
+        val names = workField.text.toString().split(',', '，').map { it.trim() }.filter { it.isNotEmpty() }
+        if (names.isEmpty()) return
+        val changed = names.any { it !in Prefs.activeWorks(this) }
+        names.forEach { Prefs.addWork(this, it); Prefs.setActive(this, it, true) }
+        if (changed) refreshTargets()
     }
 
     private fun selected(v: EditText): String {
@@ -170,27 +210,30 @@ class FixActivity : Activity() {
         }
     }
 
-    // ② 한국어 이름 → 올바른 중국어 표기 후보
+    // ② 한국어 이름 → 이 작품에서의 중국어 표기 후보
     private fun lookup() {
         val k = koField.text.toString().trim()
         if (k.isEmpty()) {
             toast("먼저 '앞으로 이렇게 번역해줘' 칸에 한국어 이름을 적어주세요")
             return
         }
+        if (Prefs.geminiKey(this).isEmpty()) {
+            info.text = "제미나이 키가 필요해요. [웹에서 찾아보기]로 직접 확인해 주세요."
+            return
+        }
+        applyWorks()
+        if (Prefs.topic(this).isEmpty()) {
+            info.text = "작품 이름을 적으면 훨씬 정확해요. 비워두면 동명이인이나 일반 단어로 헷갈릴 수 있어요. 일단 찾아볼게요…"
+        } else {
+            info.text = "'${Prefs.topic(this)}'에서 '$k' 찾는 중… (웹 검색 후 제미나이가 읽어요)"
+        }
         candBox.removeAllViews()
-        info.text = "위키에서 '$k' 찾는 중…"
         thread {
-            val wiki = runCatching { Lookup.wiki(k) }.getOrElse { emptyList() }
-            val cands = ArrayList(wiki)
-            var note = ""
-            if (cands.isEmpty()) {
-                runOnUiThread { info.text = "위키에 없어서 제미나이에게 물어보는 중…" }
-                val g = runCatching { Lookup.guess(applicationContext, k, recognizedPart.ifEmpty { zh }, around + zh) }
-                g.getOrNull()?.let { cands.add(it) }
-                if (g.isFailure) note = " (제미나이 오류: ${g.exceptionOrNull()?.message})"
-                else if (Prefs.geminiKey(this).isEmpty()) note = " (제미나이 키가 없어서 추측은 못 했어요)"
+            val res = runCatching { Lookup.find(applicationContext, k, recognizedPart.ifEmpty { zh }, around + zh) }
+            runOnUiThread {
+                val note = res.exceptionOrNull()?.let { " (오류: ${it.message})" } ?: ""
+                showCandidates(k, res.getOrElse { emptyList() }, note)
             }
-            runOnUiThread { showCandidates(k, cands, note) }
         }
     }
 
@@ -200,11 +243,13 @@ class FixActivity : Activity() {
             info.text = "'$k'의 표기를 찾지 못했어요$note. [웹에서 찾아보기]로 직접 확인해주세요."
             return
         }
-        info.text = "후보를 눌러서 고르세요. 출처가 '제미나이 추측'이면 한 번 더 확인해보세요."
+        info.text = "후보를 눌러서 고르세요. '제미나이 추측'은 웹 근거가 없는 거라 한 번 더 확인해보세요."
         for (c in cands) {
             candBox.addView(Button(this).apply {
                 isAllCaps = false
-                text = "${c.zh}   [${c.source}]" + if (c.note.isNotEmpty()) "\n${c.note}" else ""
+                text = "${c.zh}   [${c.source}]" +
+                    (if (c.note.isNotEmpty()) "\n${c.note}" else "") +
+                    (if (c.evidence.isNotEmpty()) "\n근거: “${c.evidence.take(80)}”" else "")
                 setOnClickListener { pick(c) }
             })
         }
@@ -233,13 +278,11 @@ class FixActivity : Activity() {
             toast("'=' 기호나 줄바꿈은 쓸 수 없어요")
             return
         }
-        // 같은 중국어 단어가 이미 있으면 바꿔치기, 없으면 맨 아래에 추가
-        val p = Prefs.get(this)
-        val lines = Prefs.glossaryText(this).lines().filter { it.isNotBlank() }.toMutableList()
-        val idx = lines.indexOfFirst { it.substringBefore('=').trim() == z }
+        // 고른 용어집에 저장 (같은 중국어 단어가 이미 있으면 바꿔치기)
+        applyWorks()
+        val where = target()
+        Prefs.putEntry(this, where, z, k)
         val line = "$z=$k"
-        if (idx >= 0) lines[idx] = line else lines.add(line)
-        p.edit().putString("glossary", lines.joinToString("\n")).apply()
 
         // 이 줄 다시 번역 (발음 교정도 다시 적용)
         if (id >= 0 && zh.isNotEmpty()) {
@@ -253,7 +296,7 @@ class FixActivity : Activity() {
                 )
             } catch (_: Exception) {}
         }
-        toast("용어집에 저장했어요: $line")
+        toast("${where ?: "공통"} 용어집에 저장했어요: $line")
         finish()
     }
 }

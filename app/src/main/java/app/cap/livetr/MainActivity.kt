@@ -34,7 +34,7 @@ class MainActivity : Activity() {
     private lateinit var modelBox: EditText
     private lateinit var geminiArea: LinearLayout
     private lateinit var glossaryBox: EditText
-    private lateinit var topicBox: EditText
+    private lateinit var worksBox: LinearLayout
     private lateinit var asrGroup: RadioGroup
     private lateinit var asrStatus: TextView
     private lateinit var asrDownload: Button
@@ -138,19 +138,37 @@ class MainActivity : Activity() {
             setOnClickListener { runTest() }
         })
 
-        // ── 지금 보는 내용
-        col.addView(title("지금 보는 내용"))
-        col.addView(note("예) 원신 공략 영상, 명일방주 스토리. 적어두면 제미나이가 고유명사를 더 잘 번역하고, 올바른 표기를 찾을 때도 참고해요."))
-        topicBox = EditText(this).apply {
-            setText(Prefs.topic(this@MainActivity))
-            hint = "비워둬도 돼요"
+        // ── 지금 보는 작품
+        col.addView(title("지금 보는 작품"))
+        col.addView(note("작품을 등록하고 지금 보는 것에 체크하세요 (여러 개 가능). 작품마다 용어집이 따로 있고, " +
+            "체크한 작품의 용어집만 번역에 쓰여요. 제미나이 번역과 표기 찾기에도 참고해요."))
+        worksBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(worksBox)
+        val addRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val newWork = EditText(this).apply {
+            hint = "작품 이름 (예: 림버스 컴퍼니)"
             setSingleLine(true)
         }
-        col.addView(topicBox)
+        addRow.addView(newWork, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        addRow.addView(Button(this).apply {
+            text = "추가"
+            setOnClickListener {
+                val n = newWork.text.toString().trim()
+                if (n.isNotEmpty()) {
+                    Prefs.addWork(this@MainActivity, n)
+                    Prefs.setActive(this@MainActivity, n, true)
+                    newWork.setText("")
+                    refreshWorks()
+                }
+            }
+        })
+        col.addView(addRow)
+        refreshWorks()
 
         // ── 용어집
-        col.addView(title("용어집"))
-        col.addView(note("한 줄에 하나씩 '중국어=한국어'로 적으면 그 말은 항상 이렇게 번역돼요.\n예) 原神=원신   派蒙=페이몬"))
+        col.addView(title("공통 용어집"))
+        col.addView(note("작품과 상관없이 늘 쓰는 단어. 한 줄에 하나씩 '중국어=한국어'로 적으면 그 말은 항상 이렇게 번역돼요.\n" +
+            "예) 主播=스트리머   弹幕=탄막\n작품 용어집은 위 '지금 보는 작품'의 [용어집] 버튼에서 고쳐요."))
         glossaryBox = EditText(this).apply {
             setText(Prefs.glossaryText(this@MainActivity))
             hint = "原神=원신"
@@ -161,7 +179,7 @@ class MainActivity : Activity() {
         col.addView(glossaryBox)
         col.addView(check("발음이 같은데 글자만 다르게 인식되면 용어집 단어로 자동 교정", "pinyinFix", true))
         col.addView(Button(this).apply {
-            text = "용어집 점검 (올바른 중국어 표기인지 위키·제미나이로 확인)"
+            text = "용어집 점검 (공통 + 체크한 작품 용어집을 웹 검색·제미나이로 확인)"
             isAllCaps = false
             setOnClickListener { save(); checkGlossary() }
         })
@@ -249,6 +267,118 @@ class MainActivity : Activity() {
         // 자막 창의 '번역 고치기'로 용어집이 바뀌었을 수 있으니 다시 불러옴
         val g = Prefs.glossaryText(this)
         if (glossaryBox.text.toString() != g) glossaryBox.setText(g)
+        refreshWorks()
+    }
+
+    // 작품 목록 그리기: [체크] 작품 이름  [용어집 n] [자동 만들기] [삭제]
+    private fun refreshWorks() {
+        if (!::worksBox.isInitialized) return
+        worksBox.removeAllViews()
+        val active = Prefs.activeWorks(this)
+        val all = Prefs.works(this)
+        if (all.isEmpty()) {
+            worksBox.addView(TextView(this).apply {
+                text = "아직 등록한 작품이 없어요."
+                setTextColor(Color.GRAY)
+            })
+        }
+        for (w in all) {
+            val n = Prefs.parse(Prefs.workGlossaryText(this, w)).size
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            row.addView(CheckBox(this).apply {
+                text = w
+                isChecked = w in active
+                setOnCheckedChangeListener { _, on -> Prefs.setActive(this@MainActivity, w, on) }
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            fun small(t: String, f: () -> Unit) = Button(this).apply {
+                text = t
+                isAllCaps = false
+                textSize = 12f
+                minWidth = 0
+                minimumWidth = 0
+                setPadding((8 * resources.displayMetrics.density).toInt(), 0, (8 * resources.displayMetrics.density).toInt(), 0)
+                setOnClickListener { f() }
+            }
+            row.addView(small("용어집 $n") { editWorkGlossary(w) })
+            row.addView(small("자동 만들기") { buildWorkGlossary(w) })
+            row.addView(small("삭제") {
+                android.app.AlertDialog.Builder(this)
+                    .setMessage("'$w'와 그 용어집을 지울까요?")
+                    .setPositiveButton("지우기") { _, _ -> Prefs.removeWork(this, w); refreshWorks() }
+                    .setNegativeButton("취소", null)
+                    .show()
+            })
+            worksBox.addView(row)
+        }
+    }
+
+    private fun editWorkGlossary(w: String) {
+        val box = EditText(this).apply {
+            setText(Prefs.workGlossaryText(this@MainActivity, w))
+            hint = "중국어=한국어 (한 줄에 하나)"
+            minLines = 6
+            gravity = Gravity.TOP or Gravity.START
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("$w 용어집")
+            .setView(box)
+            .setPositiveButton("저장") { _, _ ->
+                Prefs.setWorkGlossary(this, w, box.text.toString())
+                refreshWorks()
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    // (나) 작품 용어집 자동 만들기: 웹 검색 + 제미나이로 초안 → 체크해서 추가
+    private fun buildWorkGlossary(w: String) {
+        save()
+        if (Prefs.geminiKey(this).isEmpty()) {
+            Toast.makeText(this, "제미나이 키가 필요해요 (번역기 칸에서 입력)", Toast.LENGTH_LONG).show()
+            return
+        }
+        @Suppress("DEPRECATION")
+        val progress = android.app.ProgressDialog(this).apply {
+            setMessage("'$w' 용어를 찾는 중… (웹 검색 후 제미나이가 정리해요, 30초쯤 걸릴 수 있어요)")
+            setCancelable(false)
+            show()
+        }
+        thread {
+            val res = runCatching { Lookup.buildWorkGlossary(applicationContext, w) }
+            runOnUiThread {
+                progress.dismiss()
+                val list = res.getOrElse {
+                    Toast.makeText(this, "실패: ${it.message}", Toast.LENGTH_LONG).show()
+                    return@runOnUiThread
+                }
+                if (list.isEmpty()) {
+                    Toast.makeText(this, "찾은 용어가 없어요", Toast.LENGTH_LONG).show()
+                    return@runOnUiThread
+                }
+                val existing = Prefs.parse(Prefs.workGlossaryText(this, w)).map { it.first }.toSet()
+                val items = list.map { (k, z, note) ->
+                    "$k ← $z" + (if (note.isNotEmpty()) "   ($note)" else "") + (if (z in existing) "  [이미 있음]" else "")
+                }.toTypedArray()
+                val checked = BooleanArray(list.size) { list[it].second !in existing }
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("$w 용어집에 넣을 항목 (틀린 건 체크 해제)")
+                    .setMultiChoiceItems(items, checked) { _, which, on -> checked[which] = on }
+                    .setPositiveButton("넣기") { _, _ ->
+                        var added = 0
+                        list.forEachIndexed { i, (k, z, _) ->
+                            if (checked[i]) { Prefs.putEntry(this, w, z, k); added++ }
+                        }
+                        refreshWorks()
+                        Toast.makeText(this, "$added 개를 넣었어요", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("취소", null)
+                    .show()
+            }
+        }
     }
 
     override fun onPause() {
@@ -268,73 +398,72 @@ class MainActivity : Activity() {
             .putString("geminiKey", keyBox.text.toString().trim())
             .putString("geminiModel", modelBox.text.toString().trim())
             .putString("glossary", glossaryBox.text.toString())
-            .putString("topic", topicBox.text.toString().trim())
             .apply()
     }
 
-    // 용어집 점검: 한국어 이름마다 위키에서 중국어 표기를 찾아 비교, 위키에 없는 것들은 제미나이에게 한 번에 확인
+    // 용어집 점검: 공통 + 체크한 작품 용어집을 작품 기준(웹 검색 + 제미나이)으로 확인
     private fun checkGlossary() {
-        val entries = Prefs.glossary(this)
-        if (entries.isEmpty()) {
-            Toast.makeText(this, "용어집이 비어 있어요", Toast.LENGTH_SHORT).show()
+        if (Prefs.geminiKey(this).isEmpty()) {
+            Toast.makeText(this, "제미나이 키가 필요해요 (번역기 칸에서 입력)", Toast.LENGTH_LONG).show()
             return
         }
+        val stores = listOf<String?>(null) + Prefs.activeWorks(this)
+        val work = stores.filter { Prefs.parse(Prefs.glossaryTextOf(this, it)).isNotEmpty() }
+        if (work.isEmpty()) {
+            Toast.makeText(this, "점검할 용어집이 비어 있어요", Toast.LENGTH_SHORT).show()
+            return
+        }
+        @Suppress("DEPRECATION")
         val progress = android.app.ProgressDialog(this).apply {
-            setMessage("용어집 점검 중… (0/${entries.size})")
+            setMessage("용어집 점검 중…")
             setCancelable(false)
             show()
         }
         thread {
-            // (기존 중국어, 한국어, 제안 중국어, 출처·근거)
-            val sugg = ArrayList<Array<String>>()
-            val notInWiki = ArrayList<Pair<String, String>>()
-            entries.forEachIndexed { i, (z, k) ->
-                runOnUiThread { progress.setMessage("용어집 점검 중… (${i + 1}/${entries.size}) $k") }
-                val w = runCatching { Lookup.wiki(k) }.getOrElse { emptyList() }
-                when {
-                    w.isEmpty() -> notInWiki.add(Pair(z, k))
-                    w.none { it.zh == z } -> sugg.add(arrayOf(z, k, w[0].zh, "위키" + if (w[0].note.isNotEmpty()) " · ${w[0].note}" else ""))
-                }
-            }
-            if (notInWiki.isNotEmpty() && Prefs.geminiKey(this).isNotEmpty()) {
-                runOnUiThread { progress.setMessage("위키에 없는 ${notInWiki.size}개를 제미나이로 확인 중…") }
-                runCatching { Lookup.guessBatch(applicationContext, notInWiki) }.getOrNull()?.forEach { (idx, zh, why) ->
-                    val (z, k) = notInWiki[idx]
-                    sugg.add(arrayOf(z, k, zh, "제미나이 추측" + if (why.isNotEmpty()) " · $why" else ""))
+            // (용어집, 기존 중국어, 한국어, 제안 중국어, 근거)
+            val sugg = ArrayList<Array<String?>>()
+            for (st in work) {
+                runOnUiThread { progress.setMessage("${st ?: "공통"} 용어집 점검 중…") }
+                val entries = Prefs.parse(Prefs.glossaryTextOf(this, st))
+                runCatching { Lookup.check(applicationContext, st, entries) }.getOrNull()?.forEach { (i, zh, why) ->
+                    sugg.add(arrayOf(st, entries[i].first, entries[i].second, zh, why))
                 }
             }
             runOnUiThread {
                 progress.dismiss()
-                showSuggestions(sugg, entries.size)
+                showSuggestions(sugg)
             }
         }
     }
 
-    private fun showSuggestions(sugg: List<Array<String>>, total: Int) {
+    private fun showSuggestions(sugg: List<Array<String?>>) {
         if (sugg.isEmpty()) {
             android.app.AlertDialog.Builder(this)
                 .setTitle("용어집 점검")
-                .setMessage("$total 개 모두 문제를 못 찾았어요.\n(위키에 없고 제미나이 키도 없으면 확인을 못 한 항목이 있을 수 있어요)")
+                .setMessage("바꿀 만한 항목을 못 찾았어요.")
                 .setPositiveButton("확인", null)
                 .show()
             return
         }
-        val items = sugg.map { "${it[0]} → ${it[2]}   (${it[1]})\n[${it[3]}]" }.toTypedArray()
-        val checked = BooleanArray(sugg.size) { sugg[it][3].startsWith("위키") }
+        val items = sugg.map { "[${it[0] ?: "공통"}] ${it[1]} → ${it[3]}   (${it[2]})" + (if (!it[4].isNullOrEmpty()) "\n${it[4]}" else "") }
+            .toTypedArray()
+        val checked = BooleanArray(sugg.size)
         android.app.AlertDialog.Builder(this)
             .setTitle("바꿀 항목을 고르세요")
             .setMultiChoiceItems(items, checked) { _, which, on -> checked[which] = on }
             .setPositiveButton("고른 항목 바꾸기") { _, _ ->
-                var text = Prefs.glossaryText(this)
-                val lines = text.lines().toMutableList()
                 sugg.forEachIndexed { i, sg ->
                     if (!checked[i]) return@forEachIndexed
-                    val idx = lines.indexOfFirst { it.substringBefore('=').trim() == sg[0] }
-                    if (idx >= 0) lines[idx] = "${sg[2]}=${sg[1]}"
+                    val st = sg[0]
+                    val lines = Prefs.glossaryTextOf(this, st).lines().toMutableList()
+                    val idx = lines.indexOfFirst { it.substringBefore('=').trim() == sg[1] }
+                    if (idx >= 0) {
+                        lines[idx] = "${sg[3]}=${sg[2]}"
+                        Prefs.setGlossaryOf(this, st, lines.joinToString("\n"))
+                    }
                 }
-                text = lines.joinToString("\n")
-                Prefs.get(this).edit().putString("glossary", text).apply()
-                glossaryBox.setText(text)
+                glossaryBox.setText(Prefs.glossaryText(this))
+                refreshWorks()
                 Toast.makeText(this, "용어집을 고쳤어요", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("그대로 두기", null)

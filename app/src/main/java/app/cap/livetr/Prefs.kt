@@ -44,13 +44,93 @@ object Prefs {
     // 발음이 같은데 글자만 다르게 인식된 용어집 단어를 자동으로 고치기
     fun pinyinFix(ctx: Context) = get(ctx).getBoolean("pinyinFix", true)
 
-    // 지금 보는 내용 (예: "원신 공략 영상") — 번역과 공식 표기 찾기에 참고
-    fun topic(ctx: Context) = (get(ctx).getString("topic", "") ?: "").trim()
+    // ── 작품 ──
+    // 등록한 작품 목록과 지금 보는 작품(여러 개 선택 가능). 작품마다 용어집이 따로 있음.
+    private fun jsonList(ctx: Context, key: String): MutableList<String> {
+        val raw = get(ctx).getString(key, null) ?: return mutableListOf()
+        return runCatching {
+            val a = org.json.JSONArray(raw)
+            MutableList(a.length()) { a.getString(it) }
+        }.getOrElse { mutableListOf() }
+    }
+
+    private fun putList(ctx: Context, key: String, v: List<String>) {
+        val a = org.json.JSONArray()
+        v.forEach { a.put(it) }
+        get(ctx).edit().putString(key, a.toString()).apply()
+    }
+
+    fun works(ctx: Context): List<String> {
+        // 예전 버전의 '지금 보는 내용' 한 줄을 작품 하나로 옮김
+        if (!get(ctx).contains("works")) {
+            val old = (get(ctx).getString("topic", "") ?: "").trim()
+            val init = if (old.isNotEmpty()) listOf(old) else emptyList()
+            putList(ctx, "works", init)
+            putList(ctx, "activeWorks", init)
+            return init
+        }
+        return jsonList(ctx, "works")
+    }
+
+    fun activeWorks(ctx: Context): List<String> {
+        val all = works(ctx)
+        return jsonList(ctx, "activeWorks").filter { it in all }
+    }
+
+    fun addWork(ctx: Context, name: String) {
+        val n = name.trim()
+        if (n.isEmpty()) return
+        val all = works(ctx).toMutableList()
+        if (n !in all) all.add(n)
+        putList(ctx, "works", all)
+    }
+
+    fun removeWork(ctx: Context, name: String) {
+        putList(ctx, "works", works(ctx).filter { it != name })
+        putList(ctx, "activeWorks", activeWorks(ctx).filter { it != name })
+        get(ctx).edit().remove("gl:$name").apply()
+    }
+
+    fun setActive(ctx: Context, name: String, on: Boolean) {
+        val cur = activeWorks(ctx).toMutableList()
+        if (on && name !in cur) cur.add(name)
+        if (!on) cur.remove(name)
+        putList(ctx, "activeWorks", cur)
+    }
+
+    // 번역·표기 찾기에 넘기는 '지금 보는 작품' 설명
+    fun topic(ctx: Context) = activeWorks(ctx).joinToString(", ")
+
+    // ── 용어집 ──
+    // 공통 용어집 (작품과 상관없이 늘 쓰는 단어)
     fun glossaryText(ctx: Context) = get(ctx).getString("glossary", "") ?: ""
 
-    // "原神=원신" 형식의 줄들을 (중국어, 한국어) 목록으로. 긴 단어부터.
-    fun glossary(ctx: Context): List<Pair<String, String>> =
-        glossaryText(ctx).lines()
+    fun workGlossaryText(ctx: Context, work: String) = get(ctx).getString("gl:$work", "") ?: ""
+
+    fun setWorkGlossary(ctx: Context, work: String, text: String) =
+        get(ctx).edit().putString("gl:$work", text).apply()
+
+    // work 가 null 이면 공통 용어집
+    fun glossaryTextOf(ctx: Context, work: String?) =
+        if (work == null) glossaryText(ctx) else workGlossaryText(ctx, work)
+
+    fun setGlossaryOf(ctx: Context, work: String?, text: String) {
+        if (work == null) get(ctx).edit().putString("glossary", text).apply()
+        else setWorkGlossary(ctx, work, text)
+    }
+
+    // 한 용어집에 '중국어=한국어' 한 줄 추가 (같은 중국어가 있으면 바꿔치기)
+    fun putEntry(ctx: Context, work: String?, zh: String, ko: String) {
+        val lines = glossaryTextOf(ctx, work).lines().filter { it.isNotBlank() }.toMutableList()
+        val idx = lines.indexOfFirst { it.substringBefore('=').trim() == zh }
+        val line = "$zh=$ko"
+        if (idx >= 0) lines[idx] = line else lines.add(line)
+        setGlossaryOf(ctx, work, lines.joinToString("\n"))
+    }
+
+    // "原神=원신" 형식의 줄들을 (중국어, 한국어) 목록으로
+    fun parse(text: String): List<Pair<String, String>> =
+        text.lines()
             .map { it.trim() }
             .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains('=') }
             .mapNotNull {
@@ -59,5 +139,12 @@ object Prefs {
                 val ko = it.substring(i + 1).trim()
                 if (zh.isEmpty() || ko.isEmpty()) null else Pair(zh, ko)
             }
-            .sortedByDescending { it.first.length }
+
+    // 실제 번역에 쓰는 용어집: 공통 + 지금 보는 작품들 (작품 쪽이 우선). 긴 단어부터.
+    fun glossary(ctx: Context): List<Pair<String, String>> {
+        val m = LinkedHashMap<String, String>()
+        parse(glossaryText(ctx)).forEach { m[it.first] = it.second }
+        activeWorks(ctx).forEach { w -> parse(workGlossaryText(ctx, w)).forEach { m[it.first] = it.second } }
+        return m.entries.map { Pair(it.key, it.value) }.sortedByDescending { it.first.length }
+    }
 }
