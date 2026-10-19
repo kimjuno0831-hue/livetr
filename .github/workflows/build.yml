@@ -46,13 +46,15 @@ jobs:
           mkdir -p app/src/main/java/com/k2fsa/sherpa/onnx
           cp -v sherpa_src/sherpa-onnx/kotlin-api/*.kt app/src/main/java/com/k2fsa/sherpa/onnx/
 
-      - name: 6 Download Chinese speech model
+      - name: 6 Download Chinese speech model (SenseVoice 2025)
         run: |
           set -eux
           mkdir -p app/src/main/assets
-          HF=https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main
-          curl -fL -o app/src/main/assets/model.int8.onnx "$HF/model.int8.onnx"
-          curl -fL -o app/src/main/assets/tokens.txt "$HF/tokens.txt"
+          M=sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09
+          curl -fL -o sv.tar.bz2 "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/$M.tar.bz2"
+          tar xjf sv.tar.bz2 "$M/model.int8.onnx" "$M/tokens.txt"
+          mv "$M/model.int8.onnx" app/src/main/assets/model.int8.onnx
+          mv "$M/tokens.txt" app/src/main/assets/tokens.txt
           curl -fL -o app/src/main/assets/silero_vad.onnx "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
           ls -lh app/src/main/assets
 

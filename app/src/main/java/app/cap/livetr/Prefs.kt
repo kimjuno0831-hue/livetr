@@ -25,7 +25,17 @@ object Prefs {
     fun textSize(ctx: Context) = get(ctx).getInt("textSize", 18)
     fun onlyChinese(ctx: Context) = get(ctx).getBoolean("onlyChinese", true)
     fun biliOnly(ctx: Context) = get(ctx).getBoolean("biliOnly", true)
-    fun asrModel(ctx: Context) = get(ctx).getString("asrModel", Models.SV2024) ?: Models.SV2024
+    // 없어진 예전 모델(sv2024 등)이 저장돼 있으면 기본 모델로
+    fun asrModel(ctx: Context): String {
+        val v = get(ctx).getString("asrModel", Models.SV2025) ?: Models.SV2025
+        return if (Models.all.any { it.id == v }) v else Models.SV2025
+    }
+
+    // 자막 끊는 길이: short / normal / long
+    fun segLen(ctx: Context) = get(ctx).getString("segLen", "short") ?: "short"
+
+    // 말하는 도중 중국어 미리 보여주기
+    fun partial(ctx: Context) = get(ctx).getBoolean("partial", true)
     fun glossaryText(ctx: Context) = get(ctx).getString("glossary", "") ?: ""
 
     // "原神=원신" 형식의 줄들을 (중국어, 한국어) 목록으로. 긴 단어부터.

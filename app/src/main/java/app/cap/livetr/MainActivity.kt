@@ -157,7 +157,7 @@ class MainActivity : Activity() {
             setOnClickListener { downloadModel() }
         }
         col.addView(asrDownload)
-        col.addView(note("모델을 바꾸면 자막을 중지했다가 다시 시작해야 적용돼요. Fun-ASR Nano는 한국어 판별을 못 해서 '중국어만'이 덜 정확할 수 있고, 폰에 따라 느릴 수 있어요."))
+        col.addView(note("모델을 바꾸면 자막을 중지했다가 다시 시작해야 적용돼요. Fun-ASR Nano는 한국어 판별을 못 해서 '중국어만'이 덜 정확할 수 있고, 폰에 따라 느릴 수 있어요. 미리 보기(▸ 줄)는 SenseVoice에서만 돼요."))
         asrGroup.setOnCheckedChangeListener { _, id ->
             val s = Models.all[id - 201]
             p.edit().putString("asrModel", s.id).apply()
@@ -167,6 +167,16 @@ class MainActivity : Activity() {
 
         // ── 자막
         col.addView(title("자막"))
+        col.addView(note("자막 끊는 길이 (짧을수록 빨리 뜨고, 길수록 문장이 덜 잘려요. 자막을 다시 시작해야 적용)"))
+        val segGroup = RadioGroup(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val segKeys = listOf("short", "normal", "long")
+        listOf("짧게", "보통", "길게").forEachIndexed { i, label ->
+            segGroup.addView(RadioButton(this).apply { id = 301 + i; text = label })
+        }
+        segGroup.check(301 + segKeys.indexOf(Prefs.segLen(this)).coerceAtLeast(0))
+        segGroup.setOnCheckedChangeListener { _, id -> p.edit().putString("segLen", segKeys[id - 301]).apply() }
+        col.addView(segGroup)
+        col.addView(check("말하는 도중에 중국어 미리 보여주기 (▸ 줄, 폰이 뜨거워지면 끄세요)", "partial", true))
         col.addView(check("중국어만 자막으로 (한국어 등 다른 말은 숨김)", "onlyChinese", true))
         col.addView(check("빌리빌리 앱 소리만 잡기 (브라우저로 볼 땐 끄세요)", "biliOnly", true))
         col.addView(check("중국어 원문도 같이 보기 (자막 창의 原 버튼으로도 전환)", "showOrig", true))
@@ -202,6 +212,9 @@ class MainActivity : Activity() {
         })
 
         setContentView(ScrollView(this).apply { addView(col) })
+
+        // 예전 버전에서 따로 받아둔 SenseVoice 2025 파일 정리 (이제 앱에 내장)
+        thread { runCatching { Models.cleanupOld(applicationContext) } }
     }
 
     override fun onPause() {

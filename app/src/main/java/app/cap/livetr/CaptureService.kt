@@ -55,6 +55,11 @@ class CaptureService : Service() {
     private val segQueue = LinkedBlockingQueue<FloatArray>()
     private val trQueue = LinkedBlockingQueue<Pair<Long, String>>()
 
+    // 지금 말하는 중인 소리 (아직 문장이 안 끊긴 부분) — 미리 보기용
+    private val liveLock = Any()
+    private val liveChunks = ArrayList<FloatArray>()
+    @Volatile private var liveSamples = 0
+
     // 상태 표시용
     @Volatile private var nShown = 0
     @Volatile private var nHidden = 0
@@ -178,6 +183,12 @@ class CaptureService : Service() {
     // 1) 재생 중인 소리를 잡아서, 말하는 구간만 잘라 큐에 넣는다. 실패하면 최대 3번 다시 시도.
     private fun captureLoop(my: Int, proj: MediaProjection) {
         var vad: Vad? = null
+        // 자막 길이: 짧게는 빨리 뜨고, 길게는 문장이 덜 잘림 (다시 시작해야 적용)
+        val (silence, maxLen) = when (Prefs.segLen(this)) {
+            "long" -> Pair(0.4f, 8.0f)
+            "normal" -> Pair(0.3f, 5.0f)
+            else -> Pair(0.2f, 3.5f)
+        }
         try {
             val v = Vad(
                 assetManager = assets,
@@ -185,10 +196,10 @@ class CaptureService : Service() {
                     sileroVadModelConfig = SileroVadModelConfig(
                         model = "silero_vad.onnx",
                         threshold = 0.5f,
-                        minSilenceDuration = 0.35f,
+                        minSilenceDuration = silence,
                         minSpeechDuration = 0.25f,
                         windowSize = 512,
-                        maxSpeechDuration = 8.0f,
+                        maxSpeechDuration = maxLen,
                     ),
                     sampleRate = SR,
                     numThreads = 1,
@@ -278,12 +289,28 @@ class CaptureService : Service() {
                         acc = 0f
                         cnt = 0
                         if (wi == 512) {
-                            v.acceptWaveform(win.copyOf())
+                            val chunk = win.copyOf()
+                            v.acceptWaveform(chunk)
                             wi = 0
+                            var cut = false
                             while (!v.empty()) {
                                 val seg = v.front()
                                 v.pop()
                                 segQueue.offer(seg.samples)
+                                cut = true
+                            }
+                            synchronized(liveLock) {
+                                if (cut) {
+                                    liveChunks.clear()
+                                    liveSamples = 0
+                                }
+                                if (v.isSpeechDetected() && liveSamples < SR * 10) {
+                                    liveChunks.add(chunk)
+                                    liveSamples += chunk.size
+                                } else if (!v.isSpeechDetected() && liveSamples > 0) {
+                                    liveChunks.clear()
+                                    liveSamples = 0
+                                }
                             }
                         }
                     }
@@ -327,8 +354,40 @@ class CaptureService : Service() {
 
             val tag = Regex("<\\|.*?\\|>")
             val hangul = Regex("[\\uAC00-\\uD7A3\\u3131-\\u318E]")
+            // 미리 보기는 가벼운 SenseVoice에서만 (Fun-ASR Nano는 너무 무거움)
+            val canPartial = modelId == Models.SV2025
+            var lastPartialAt = 0
             while (alive(my)) {
-                val seg = segQueue.poll(300, TimeUnit.MILLISECONDS) ?: continue
+                val seg = segQueue.poll(200, TimeUnit.MILLISECONDS)
+                if (seg == null) {
+                    // 문장이 아직 안 끊겼으면, 지금까지 들은 만큼 중국어를 미리 보여줌 (약 0.7초마다)
+                    if (canPartial && Prefs.partial(this)) {
+                        val n = liveSamples
+                        if (n >= SR * 8 / 10 && n - lastPartialAt >= SR * 7 / 10) {
+                            lastPartialAt = n
+                            val buf = synchronized(liveLock) {
+                                val out = FloatArray(liveSamples)
+                                var o = 0
+                                for (c in liveChunks) { System.arraycopy(c, 0, out, o, c.size); o += c.size }
+                                out
+                            }
+                            val ps = rec.createStream()
+                            ps.acceptWaveform(buf, SR)
+                            rec.decode(ps)
+                            val pr = rec.getResult(ps)
+                            ps.release()
+                            val pt = pr.text.replace(tag, "").trim()
+                            val plang = pr.lang.replace("<|", "").replace("|>", "").trim()
+                            val skip = Prefs.onlyChinese(this) &&
+                                ((plang.isNotEmpty() && plang != "zh" && plang != "yue") || hangul.containsMatchIn(pt))
+                            if (pt.isNotEmpty() && !skip) overlay?.live(pt)
+                        } else if (n == 0 && lastPartialAt != 0) {
+                            lastPartialAt = 0
+                        }
+                    }
+                    continue
+                }
+                lastPartialAt = 0
                 while (segQueue.size > 3) segQueue.poll()   // 너무 밀리면 오래된 건 버림
 
                 val stream = rec.createStream()
@@ -346,6 +405,7 @@ class CaptureService : Service() {
                     val notChinese = (detects && lang.isNotEmpty() && lang != "zh" && lang != "yue") ||
                         hangul.containsMatchIn(text)
                     if (notChinese) {
+                        overlay?.live("")
                         nHidden++
                         report()
                         continue

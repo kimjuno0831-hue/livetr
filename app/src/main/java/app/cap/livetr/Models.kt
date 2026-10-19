@@ -18,7 +18,6 @@ import java.net.URL
 
 // 음성 인식 모델 목록과 내려받기
 object Models {
-    const val SV2024 = "sv2024"
     const val SV2025 = "sv2025"
     const val FUNNANO = "funnano"
 
@@ -31,14 +30,18 @@ object Models {
     )
 
     val all = listOf(
-        Spec(SV2024, "SenseVoice 2024 (기본, 앱에 내장)", null, 0, true),
-        Spec(SV2025, "SenseVoice 2025 (신판, 약 170MB 내려받기)",
-            "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09", 170, true),
+        Spec(SV2025, "SenseVoice 2025 (기본, 앱에 내장, 가볍고 빠름)", null, 0, true),
         Spec(FUNNANO, "Fun-ASR Nano (가장 최신·무거움, 약 840MB 내려받기)",
             "sherpa-onnx-funasr-nano-int8-2025-12-30", 840, false),
     )
 
     fun spec(id: String) = all.firstOrNull { it.id == id } ?: all[0]
+
+    // 예전 버전에서 따로 내려받았던 SenseVoice 2025는 이제 앱에 내장이라 지워서 공간 돌려받기
+    fun cleanupOld(ctx: Context) {
+        File(ctx.filesDir, "models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09").deleteRecursively()
+        File(ctx.filesDir, "models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tmp").deleteRecursively()
+    }
 
     private fun dir(ctx: Context, s: Spec) = File(ctx.filesDir, "models/${s.archive}")
 
@@ -129,26 +132,6 @@ object Models {
         val s = spec(id)
         val feat = FeatureConfig(sampleRate = 16000, featureDim = 80)
         return when (s.id) {
-            SV2025 -> {
-                val d = dir(ctx, s).absolutePath
-                OfflineRecognizer(
-                    assetManager = null,
-                    config = OfflineRecognizerConfig(
-                        featConfig = feat,
-                        modelConfig = OfflineModelConfig(
-                            senseVoice = OfflineSenseVoiceModelConfig(
-                                model = "$d/model.int8.onnx",
-                                language = "",
-                                useInverseTextNormalization = true,
-                            ),
-                            tokens = "$d/tokens.txt",
-                            numThreads = 3,
-                            provider = "cpu",
-                            modelType = "sense_voice",
-                        ),
-                    )
-                )
-            }
             FUNNANO -> {
                 val d = dir(ctx, s).absolutePath
                 OfflineRecognizer(

@@ -18,7 +18,8 @@ import android.widget.TextView
 
 // 화면 위에 뜨는 자막 기록창
 // · 새 문장은 맨 아래에 추가, 이전 문장은 위로 밀려 올라감 (스크롤로 다시 보기)
-// · 위쪽 ≡ 손잡이로 이동, 오른쪽 아래 ◢ 로 크기 조절, 原 버튼으로 원문 켜기/끄기
+// · 맨 위 줄 아무 데나 끌면 이동, 오른쪽 아래 ◢ 로 크기 조절, 原 버튼을 톡 누르면 원문 켜기/끄기
+// · 말하는 도중에는 맨 아래에 중국어를 미리 보여줌 (▸ 줄)
 // · 말이 한동안 없으면 흐려짐
 // · '위치 잠금'이면 터치가 전부 영상으로 통과
 class Overlay(private val ctx: Context) {
@@ -31,7 +32,9 @@ class Overlay(private val ctx: Context) {
     private val statusView = TextView(ctx)
     private val origBtn = TextView(ctx)
     private val scroll = ScrollView(ctx)
+    private val content = LinearLayout(ctx)
     private val list = LinearLayout(ctx)
+    private val liveView = TextView(ctx)
     private val resizer = TextView(ctx)
 
     private class Entry(val box: LinearLayout, val orig: TextView, val tr: TextView, var origText: String)
@@ -70,20 +73,27 @@ class Overlay(private val ctx: Context) {
             handle.text = "≡"
             handle.setTextColor(Color.WHITE)
             handle.textSize = 20f
-            handle.setPadding(dp(12f), dp(2f), dp(12f), dp(2f))
+            handle.setPadding(dp(12f), dp(6f), dp(8f), dp(6f))
             statusView.setTextColor(Color.rgb(170, 170, 170))
             statusView.textSize = 11f
             statusView.maxLines = 2
             origBtn.textSize = 14f
-            origBtn.setPadding(dp(12f), dp(2f), dp(12f), dp(2f))
+            origBtn.setPadding(dp(14f), dp(6f), dp(14f), dp(6f))
+            header.minimumHeight = dp(36f)
             header.addView(handle)
             header.addView(statusView, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             header.addView(origBtn)
             refreshOrigBtn()
 
             list.orientation = LinearLayout.VERTICAL
-            list.setPadding(dp(12f), 0, dp(12f), dp(4f))
-            scroll.addView(list)
+            list.setPadding(dp(12f), 0, dp(12f), 0)
+            liveView.setTextColor(Color.rgb(140, 200, 255))
+            liveView.setPadding(dp(12f), 0, dp(12f), dp(4f))
+            liveView.visibility = View.GONE
+            content.orientation = LinearLayout.VERTICAL
+            content.addView(list)
+            content.addView(liveView)
+            scroll.addView(content)
             scroll.isVerticalScrollBarEnabled = true
 
             resizer.text = "◢"
@@ -112,29 +122,45 @@ class Overlay(private val ctx: Context) {
             }
             scroll.setOnTouchListener { _, _ -> wake(); false }
 
-            origBtn.setOnClickListener {
-                val now = !Prefs.showOrig(ctx)
-                Prefs.get(ctx).edit().putBoolean("showOrig", now).apply()
-                refreshAll()
-                wake()
-            }
-
-            handle.setOnTouchListener(object : View.OnTouchListener {
+            // 맨 위 줄 전체로 끌어서 이동. 原 버튼은 톡 누르면 원문 켜기/끄기, 끌면 이동.
+            val drag = object : View.OnTouchListener {
                 var dx0 = 0f; var dy0 = 0f; var x0 = 0; var y0 = 0
+                var moved = false
                 override fun onTouch(v: View, e: MotionEvent): Boolean {
                     when (e.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> { dx0 = e.rawX; dy0 = e.rawY; x0 = lp.x; y0 = lp.y; wake() }
-                        MotionEvent.ACTION_MOVE -> {
-                            lp.x = x0 + (e.rawX - dx0).toInt()
-                            lp.y = y0 + (e.rawY - dy0).toInt()
-                            clamp(); update()
+                        MotionEvent.ACTION_DOWN -> {
+                            dx0 = e.rawX; dy0 = e.rawY; x0 = lp.x; y0 = lp.y; moved = false; wake()
                         }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
-                            Prefs.get(ctx).edit().putInt("posX", lp.x).putInt("posY", lp.y).apply()
+                        MotionEvent.ACTION_MOVE -> {
+                            val ddx = e.rawX - dx0
+                            val ddy = e.rawY - dy0
+                            if (!moved && (ddx * ddx + ddy * ddy) > dp(8f) * dp(8f)) moved = true
+                            if (moved) {
+                                lp.x = x0 + ddx.toInt()
+                                lp.y = y0 + ddy.toInt()
+                                clamp(); update()
+                            }
+                        }
+                        MotionEvent.ACTION_UP -> {
+                            if (moved) {
+                                Prefs.get(ctx).edit().putInt("posX", lp.x).putInt("posY", lp.y).apply()
+                            } else if (v === origBtn) {
+                                val now = !Prefs.showOrig(ctx)
+                                Prefs.get(ctx).edit().putBoolean("showOrig", now).apply()
+                                refreshAll()
+                            }
+                        }
+                        MotionEvent.ACTION_CANCEL -> {
+                            if (moved) Prefs.get(ctx).edit().putInt("posX", lp.x).putInt("posY", lp.y).apply()
+                        }
                     }
                     return true
                 }
-            })
+            }
+            header.setOnTouchListener(drag)
+            handle.setOnTouchListener(drag)
+            statusView.setOnTouchListener(drag)
+            origBtn.setOnTouchListener(drag)
 
             resizer.setOnTouchListener(object : View.OnTouchListener {
                 var dx0 = 0f; var dy0 = 0f; var w0 = 0; var h0 = 0
@@ -185,6 +211,20 @@ class Overlay(private val ctx: Context) {
 
     fun clearError() = ui.post { errorText = null }
 
+    // ── 말하는 도중 미리 보기 줄 ──
+    fun live(text: String) = ui.post {
+        if (!added) return@post
+        if (text.isEmpty()) {
+            liveView.visibility = View.GONE
+            return@post
+        }
+        liveView.textSize = Prefs.textSize(ctx) * 0.8f
+        liveView.text = "▸ $text"
+        liveView.visibility = View.VISIBLE
+        if (follow) scrollToEnd()
+        wake()
+    }
+
     // ── 자막 줄 ──
     // 원문을 먼저 넣고(번역 중 "…"), 번역이 오면 update로 채움
     fun add(orig: String): Long {
@@ -192,6 +232,7 @@ class Overlay(private val ctx: Context) {
         ui.post {
             if (!added) return@post
             errorText = null
+            liveView.visibility = View.GONE
             val size = Prefs.textSize(ctx).toFloat()
             val box = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
@@ -258,12 +299,12 @@ class Overlay(private val ctx: Context) {
     }
 
     private fun atBottom(): Boolean {
-        val child = scroll.getChildAt(0) ?: return true
+        val child = content
         return scroll.scrollY + scroll.height >= child.height - dp(24f)
     }
 
     private fun scrollToEnd() {
-        scroll.post { scroll.scrollTo(0, list.height); follow = true }
+        scroll.post { scroll.scrollTo(0, content.height); follow = true }
     }
 
     private fun wake() {
