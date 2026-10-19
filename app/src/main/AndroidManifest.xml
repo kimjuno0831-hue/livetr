@@ -8,6 +8,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <queries>
+        <package android:name="tv.danmaku.bili" />
+        <package android:name="tv.danmaku.bilibilihd" />
+        <package android:name="com.bstar.intl" />
+        <package android:name="com.bilibili.app.blue" />
+    </queries>
+
     <application
         android:allowBackup="false"
         android:label="실시간 번역"
