@@ -1,0 +1,1 @@
+pinyin.txt: generated from mozillazg/pinyin-data (MIT License, Copyright (c) 2016 mozillazg). Toneless, first two readings per character.

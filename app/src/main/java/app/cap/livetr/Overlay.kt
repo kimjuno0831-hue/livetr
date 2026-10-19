@@ -22,8 +22,8 @@ import android.widget.TextView
 // · 말하는 도중에는 맨 아래에 중국어를 미리 보여줌 (▸ 줄)
 // · 말이 한동안 없으면 흐려짐
 // · '위치 잠금'이면 터치가 전부 영상으로 통과
-// onFix: 자막 줄을 길게 누르면 (줄 번호, 중국어, 한국어)로 불림 → 번역 고치기 화면
-class Overlay(private val ctx: Context, private val onFix: ((Long, String, String) -> Unit)? = null) {
+// onFix: 자막 줄을 길게 누르면 (줄 번호, 중국어, 한국어, 앞뒤 자막 중국어)로 불림 → 번역 고치기 화면
+class Overlay(private val ctx: Context, private val onFix: ((Long, String, String, List<String>) -> Unit)? = null) {
     private val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val ui = Handler(Looper.getMainLooper())
 
@@ -53,6 +53,9 @@ class Overlay(private val ctx: Context, private val onFix: ((Long, String, Strin
     private var added = false
     private var errorText: String? = null
     private var lastSize = -1
+    private var expanded = false
+    private var normalH = 0
+    private var lastTapAt = 0L
 
     private val lp = WindowManager.LayoutParams(
         WindowManager.LayoutParams.WRAP_CONTENT,
@@ -105,11 +108,12 @@ class Overlay(private val ctx: Context, private val onFix: ((Long, String, Strin
             scroll.addView(content)
             scroll.isVerticalScrollBarEnabled = true
 
-            resizer.text = "◢"
-            resizer.setTextColor(Color.rgb(150, 150, 150))
-            resizer.textSize = 14f
-            resizer.gravity = Gravity.END
-            resizer.setPadding(dp(12f), 0, dp(6f), dp(2f))
+            // 아래 테두리 전체가 크기 조절 손잡이 (위아래로 끌면 높이, 오른쪽 끝 ◢ 를 끌면 폭도)
+            resizer.text = "━━━━━━              ◢"
+            resizer.setTextColor(Color.rgb(140, 140, 140))
+            resizer.textSize = 15f
+            resizer.gravity = Gravity.CENTER
+            resizer.setPadding(dp(12f), dp(4f), dp(8f), dp(6f))
 
             root.addView(header)
             root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
@@ -157,6 +161,15 @@ class Overlay(private val ctx: Context, private val onFix: ((Long, String, Strin
                                 val now = !Prefs.showOrig(ctx)
                                 Prefs.get(ctx).edit().putBoolean("showOrig", now).apply()
                                 refreshAll()
+                            } else {
+                                // 맨 위 줄 두 번 톡 → 펼치기/접기
+                                val t = android.os.SystemClock.uptimeMillis()
+                                if (t - lastTapAt < 350) {
+                                    lastTapAt = 0
+                                    toggleExpand()
+                                } else {
+                                    lastTapAt = t
+                                }
                             }
                         }
                         MotionEvent.ACTION_CANCEL -> {
@@ -173,12 +186,20 @@ class Overlay(private val ctx: Context, private val onFix: ((Long, String, Strin
 
             resizer.setOnTouchListener(object : View.OnTouchListener {
                 var dx0 = 0f; var dy0 = 0f; var w0 = 0; var h0 = 0
+                var widthToo = false
                 override fun onTouch(v: View, e: MotionEvent): Boolean {
                     when (e.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> { dx0 = e.rawX; dy0 = e.rawY; w0 = lp.width; h0 = lp.height; wake() }
+                        MotionEvent.ACTION_DOWN -> {
+                            dx0 = e.rawX; dy0 = e.rawY; w0 = lp.width; h0 = lp.height
+                            widthToo = e.x > v.width * 0.75f   // 오른쪽 끝을 잡았을 때만 폭도 바꿈
+                            expanded = false
+                            wake()
+                        }
                         MotionEvent.ACTION_MOVE -> {
                             val dm2 = ctx.resources.displayMetrics
-                            lp.width = (w0 + (e.rawX - dx0).toInt()).coerceIn(dm2.widthPixels * 4 / 10, dm2.widthPixels)
+                            if (widthToo) {
+                                lp.width = (w0 + (e.rawX - dx0).toInt()).coerceIn(dm2.widthPixels * 4 / 10, dm2.widthPixels)
+                            }
                             lp.height = (h0 + (e.rawY - dy0).toInt()).coerceIn(dp(80f), dm2.heightPixels * 8 / 10)
                             clamp(); update()
                         }
@@ -272,7 +293,7 @@ class Overlay(private val ctx: Context, private val onFix: ((Long, String, Strin
             // 길게 누르면 이 줄의 번역 고치기
             box.isLongClickable = true
             box.setOnLongClickListener {
-                if (e.ko.isNotEmpty() && e.ko != "…") onFix?.invoke(e.id, e.rawZh, e.ko)
+                if (e.ko.isNotEmpty() && e.ko != "…") onFix?.invoke(e.id, e.rawZh, e.ko, around(e.id))
                 true
             }
             entries[id] = e
@@ -359,6 +380,35 @@ class Overlay(private val ctx: Context, private val onFix: ((Long, String, Strin
         val on = Prefs.showOrig(ctx)
         origBtn.text = if (on) "原 켬" else "原 끔"
         origBtn.setTextColor(if (on) Color.WHITE else Color.rgb(120, 120, 120))
+    }
+
+    // 펼치기: 화면의 60% 높이로 (지난 번역을 많이 보기). 다시 두 번 톡 하면 원래 크기로.
+    private fun toggleExpand() {
+        val dm = ctx.resources.displayMetrics
+        if (expanded) {
+            lp.height = if (normalH > 0) normalH else dp(170f)
+            expanded = false
+        } else {
+            normalH = lp.height
+            lp.height = (dm.heightPixels * 0.6f).toInt()
+            expanded = true
+            // 펼친 창이 화면 아래로 넘치지 않게 위로 올림
+            if (lp.y + lp.height > dm.heightPixels) lp.y = maxOf(0, dm.heightPixels - lp.height)
+        }
+        clamp(); update()
+        if (follow) scrollToEnd()
+        wake()
+    }
+
+    // 번역 고치기에 넘길 앞뒤 자막 (중국어, 앞 3줄 + 뒤 2줄)
+    private fun around(id: Long): List<String> {
+        val keys = entries.keys.toList()
+        val i = keys.indexOf(id)
+        if (i < 0) return emptyList()
+        return (maxOf(0, i - 3) until minOf(keys.size, i + 3))
+            .filter { it != i }
+            .mapNotNull { entries[keys[it]]?.rawZh }
+            .filter { it.isNotEmpty() }
     }
 
     private fun atBottom(): Boolean {

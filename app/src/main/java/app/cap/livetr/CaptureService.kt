@@ -90,7 +90,10 @@ class CaptureService : Service() {
             val id = intent.getLongExtra("id", -1)
             val zh = intent.getStringExtra("zh") ?: ""
             if (projection == null) stopSelf()
-            else if (id >= 0 && zh.isNotEmpty()) trQueue.offer(Pair(id, zh))
+            else if (id >= 0 && zh.isNotEmpty()) {
+                overlay?.setOrig(id, zh)
+                trQueue.offer(Pair(id, zh))
+            }
             return START_NOT_STICKY
         }
         startAsForeground("준비 중…")
@@ -122,7 +125,7 @@ class CaptureService : Service() {
             }
         }, ui)
 
-        val ov = overlay ?: Overlay(this) { id, zh, ko -> openFix(id, zh, ko) }.also { overlay = it; it.attach() }
+        val ov = overlay ?: Overlay(this) { id, zh, ko, around -> openFix(id, zh, ko, around) }.also { overlay = it; it.attach() }
         ov.clearError()
         live?.close()
         live = null
@@ -471,8 +474,9 @@ class CaptureService : Service() {
                             val skip = Prefs.onlyChinese(this) &&
                                 ((plang.isNotEmpty() && plang != "zh" && plang != "yue") || hangul.containsMatchIn(pt))
                             if (pt.isNotEmpty() && !skip) {
-                                overlay?.live(pt)
-                                if (Prefs.partialTr(this)) synchronized(previewLock) { previewZh = pt }
+                                val pf = if (Prefs.pinyinFix(this)) Pinyin.fix(this, pt, Prefs.glossary(this)) else pt
+                                overlay?.live(pf)
+                                if (Prefs.partialTr(this)) synchronized(previewLock) { previewZh = pf }
                             }
                         } else if (n == 0 && lastPartialAt != 0) {
                             lastPartialAt = 0
@@ -507,10 +511,12 @@ class CaptureService : Service() {
                     }
                 }
 
-                val id = overlay?.add(text) ?: continue
+                // 용어집 단어가 발음만 같은 다른 글자로 적혔으면 번역 전에 바로잡기
+                val fixed = if (Prefs.pinyinFix(this)) Pinyin.fix(this, text, Prefs.glossary(this)) else text
+                val id = overlay?.add(fixed) ?: continue
                 nShown++
                 report()
-                trQueue.offer(Pair(id, text))
+                trQueue.offer(Pair(id, fixed))
             }
         } catch (e: Throwable) {
             if (alive(my)) overlay?.error("오류(음성 인식): ${e.message}")
@@ -581,12 +587,13 @@ class CaptureService : Service() {
         return if (i > t.length / 2) t.substring(0, i) else t
     }
 
-    private fun openFix(id: Long, zh: String, ko: String) {
+    private fun openFix(id: Long, zh: String, ko: String, around: List<String>) {
         val i = Intent(this, FixActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             .putExtra("id", id)
             .putExtra("zh", zh)
             .putExtra("ko", ko)
+            .putStringArrayListExtra("around", ArrayList(around))
         try { startActivity(i) } catch (_: Exception) {}
     }
 

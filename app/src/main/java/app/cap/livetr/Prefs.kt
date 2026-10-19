@@ -40,6 +40,12 @@ object Prefs {
 
     // 말하는 도중 미리 번역 (구글 번역으로)
     fun partialTr(ctx: Context) = get(ctx).getBoolean("partialTr", true)
+
+    // 발음이 같은데 글자만 다르게 인식된 용어집 단어를 자동으로 고치기
+    fun pinyinFix(ctx: Context) = get(ctx).getBoolean("pinyinFix", true)
+
+    // 지금 보는 내용 (예: "원신 공략 영상") — 번역과 공식 표기 찾기에 참고
+    fun topic(ctx: Context) = (get(ctx).getString("topic", "") ?: "").trim()
     fun glossaryText(ctx: Context) = get(ctx).getString("glossary", "") ?: ""
 
     // "原神=원신" 형식의 줄들을 (중국어, 한국어) 목록으로. 긴 단어부터.

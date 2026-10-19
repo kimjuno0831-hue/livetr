@@ -63,6 +63,9 @@ class Translators(private val ctx: Context) {
         return gemini(system, user, false, null).trim().trim('"', '“', '”', '「', '」')
     }
 
+    // 그 밖의 제미나이 질문 (공식 표기 찾기, 용어집 점검)
+    fun ask(system: String, user: String): String = gemini(system, user, false, null)
+
     // 설정 화면의 [번역 테스트]용: 실패하면 이유를 그대로 보여줌
     fun test(zh: String): String {
         val gl = Prefs.glossary(ctx)
@@ -138,6 +141,8 @@ class Translators(private val ctx: Context) {
             append("오탈자나 발음이 비슷한 글자로 잘못 인식된 부분이 있을 수 있다. 앞 문맥을 참고해서 ")
             append("말하는 사람이 실제로 했을 법한 의미로, 자연스러운 한국어 구어체 자막으로 번역하라. ")
             append("번역문만 출력하고 설명, 따옴표, 원문, 앞 문맥의 번역은 절대 쓰지 마라.")
+            val topic = Prefs.topic(ctx)
+            if (topic.isNotEmpty()) append("\n\n[지금 보는 영상의 내용]\n").append(topic)
             if (used.isNotEmpty()) {
                 append("\n\n[용어집 - 아래 단어는 반드시 이렇게 번역]\n")
                 used.forEach { append(it.first).append(" → ").append(it.second).append('\n') }
