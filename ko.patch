@@ -1933,7 +1933,7 @@ index dcc46c5..146f108 100644
                        maxLines: 2,
                        overflow: TextOverflow.ellipsis,
 diff --git a/lib/pages/video/widgets/header_control.dart b/lib/pages/video/widgets/header_control.dart
-index 588334a..1394f6d 100644
+index 588334a..b5fede4 100644
 --- a/lib/pages/video/widgets/header_control.dart
 +++ b/lib/pages/video/widgets/header_control.dart
 @@ -1,3 +1,5 @@
@@ -1960,15 +1960,16 @@ index 588334a..1394f6d 100644
                  ListTile(
                    dense: true,
                    onTap: () async {
-@@ -1154,6 +1167,41 @@ class HeaderControlState extends State<HeaderControl>
+@@ -1154,6 +1167,42 @@ class HeaderControlState extends State<HeaderControl>
      );
    }
  
 +  // 한국어 번역: 지금 화면에 떠 있는 자막의 원문을 찾아 번역 고치기 창 열기
 +  void _koFixSubtitle() {
-+    final lines = plPlayerController.videoPlayerController?.state.subtitle ?? const <String>[];
-+    final parts = lines
-+        .expand((l) => l.split('\n'))
++    // 지금 떠 있는 자막 (첫째·둘째 줄을 줄바꿈으로 이어 붙인 글)
++    final now = plPlayerController.videoPlayerController?.state.subtitle.toString() ?? '';
++    final parts = now
++        .split('\n')
 +        .map((l) => l.trim())
 +        .where((l) => l.isNotEmpty)
 +        .toList();
