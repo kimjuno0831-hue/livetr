@@ -65,7 +65,20 @@ jobs:
         run: lib/scripts/build.ps1 android
 
       - name: 8 Build APK
-        run: flutter build apk --release --target-platform android-arm64 --dart-define-from-file=pili_release.json --no-pub --android-project-arg dev=1
+        run: |
+          set -o pipefail
+          flutter build apk --release --target-platform android-arm64 --dart-define-from-file=pili_release.json --no-pub --android-project-arg dev=1 2>&1 | tee build.log
+
+      - name: 8b Report compile errors
+        if: failure()
+        run: |
+          # 컴파일 오류를 주석(annotation)으로 남겨서 API 로 읽을 수 있게
+          grep -E "Error:|error:|Exception" build.log | grep -v "^\s*$" | head -40 | while IFS= read -r line; do
+            echo "::error::${line//%/%25}"
+          done
+          grep -n -A3 -E "^lib/.*Error:" build.log | head -120 | while IFS= read -r line; do
+            echo "::warning::${line//%/%25}"
+          done
 
       - name: 9 Publish APK
         env:
