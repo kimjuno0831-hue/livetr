@@ -1,13 +1,33 @@
 diff --git a/lib/common/widgets/video_card/video_card_h.dart b/lib/common/widgets/video_card/video_card_h.dart
-index 0aab73f..70776db 100644
+index 0aab73f..7fd83c9 100644
 --- a/lib/common/widgets/video_card/video_card_h.dart
 +++ b/lib/common/widgets/video_card/video_card_h.dart
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,5 @@
++import 'package:PiliPlus/ko/ko_translate.dart';
 +import 'package:PiliPlus/ko/ko_widgets.dart';
  import 'package:PiliPlus/common/style.dart';
  import 'package:PiliPlus/common/widgets/badge.dart';
  import 'package:PiliPlus/common/widgets/image/image_save.dart';
-@@ -172,7 +173,7 @@ class VideoCardH extends StatelessWidget {
+@@ -148,11 +150,11 @@ class VideoCardH extends StatelessWidget {
+         children: [
+           if (videoItem.titleList?.isNotEmpty == true)
+             Expanded(
+-              child: Text.rich(
++              child: KoBuilder(text: videoItem.title, enabled: KoTr.textOn, builder: (context, ko) => Text.rich(
+                 overflow: .ellipsis,
+                 maxLines: 2,
+                 TextSpan(
+-                  children: videoItem.titleList!
++                  children: koEm(videoItem.titleList!, ko)
+                       .map(
+                         (e) => TextSpan(
+                           text: e.text,
+@@ -168,11 +170,11 @@ class VideoCardH extends StatelessWidget {
+                       )
+                       .toList(),
+                 ),
+-              ),
++              )),
              )
            else
              Expanded(
@@ -176,6 +196,27 @@ index bed20cd..f2c9fb1 100644
                      item.title!,
                      maxLines: 1,
                      overflow: .ellipsis,
+diff --git a/lib/pages/common/common_intro_controller.dart b/lib/pages/common/common_intro_controller.dart
+index 575203d..ba6c390 100644
+--- a/lib/pages/common/common_intro_controller.dart
++++ b/lib/pages/common/common_intro_controller.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_translate.dart';
+ import 'dart:async' show FutureOr, Timer;
+ 
+ import 'package:PiliPlus/http/fav.dart';
+@@ -149,6 +150,11 @@ abstract class CommonIntroController extends GetxController
+   Future<void> queryVideoTags() async {
+     final result = await UserHttp.videoTags(bvid: bvid, cid: cid.value);
+     videoTags.value = result.dataOrNull;
++    // 한국어 번역: 작품별 용어집 자동 적용용 태그
++    KoTr.addContext(
++      bvid,
++      result.dataOrNull?.map((e) => e.tagName ?? '').join(' '),
++    );
+   }
+ 
+   Future<void> viewLater() async {
 diff --git a/lib/pages/danmaku/controller.dart b/lib/pages/danmaku/controller.dart
 index 456870d..d15b478 100644
 --- a/lib/pages/danmaku/controller.dart
@@ -990,6 +1031,173 @@ index 186b58f..b78d034 100644
                    item.content!,
                    style: const TextStyle(height: 1.75),
                  )
+diff --git a/lib/pages/search/controller.dart b/lib/pages/search/controller.dart
+index 9904ed7..5c04883 100644
+--- a/lib/pages/search/controller.dart
++++ b/lib/pages/search/controller.dart
+@@ -1,3 +1,5 @@
++import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
++import 'package:PiliPlus/ko/ko_translate.dart';
+ import 'dart:async';
+ 
+ import 'package:PiliPlus/common/widgets/dialog/dialog.dart';
+@@ -170,6 +172,15 @@ class SSearchController extends GetxController
+       validateUid();
+     }
+ 
++    // 한국어 번역: 한국어로 검색하면 중국어로 바꿔서
++    if (KoTr.searchKoOn && KoTr.hasHangul(controller.text)) {
++      final zh = await KoTr.toChinese(controller.text.trim());
++      if (zh != null && zh.isNotEmpty && !KoTr.hasHangul(zh)) {
++        SmartDialog.showToast('「$zh」(으)로 검색해요');
++        controller.text = zh;
++      }
++    }
++
+     final text = controller.text;
+ 
+     if (await PiliScheme.routePushFromUrl(text, selfHandle: true)) {
+diff --git a/lib/pages/search/view.dart b/lib/pages/search/view.dart
+index 47767aa..8c1af96 100644
+--- a/lib/pages/search/view.dart
++++ b/lib/pages/search/view.dart
+@@ -1,3 +1,6 @@
++import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
++import 'package:PiliPlus/ko/ko_widgets.dart';
++import 'package:PiliPlus/ko/ko_translate.dart';
+ import 'dart:convert';
+ 
+ import 'package:PiliPlus/common/widgets/dialog/export_import.dart';
+@@ -104,6 +107,20 @@ class _SearchPageState extends State<SearchPage> {
+               )
+             : const SizedBox.shrink(),
+       ),
++      // 한국어 번역: 검색 화면 번역 켜기/끄기
++      IconButton(
++        tooltip: KoTr.searchOn ? '검색 화면 번역 끄기' : '검색 화면 번역 켜기',
++        icon: Icon(
++          Icons.translate,
++          size: 22,
++          color: KoTr.searchOn ? theme.colorScheme.primary : null,
++        ),
++        onPressed: () {
++          GStorage.setting.put(KoTr.kSearch, !KoTr.searchOn);
++          SmartDialog.showToast(KoTr.searchOn ? '검색 화면 번역 켬' : '검색 화면 번역 끔');
++          setState(() {});
++        },
++      ),
+       IconButton(
+         tooltip: '清空',
+         icon: const Icon(Icons.clear, size: 22),
+@@ -116,7 +133,9 @@ class _SearchPageState extends State<SearchPage> {
+       ),
+       const SizedBox(width: 10),
+     ],
+-    title: TextField(
++    title: ValueListenableBuilder<int>(
++      valueListenable: KoTr.updates,
++      builder: (_, _, _) => TextField(
+       autofocus: true,
+       focusNode: _searchController.searchFocusNode,
+       controller: _searchController.controller,
+@@ -124,13 +143,21 @@ class _SearchPageState extends State<SearchPage> {
+       onChanged: _searchController.onChange,
+       decoration: InputDecoration(
+         visualDensity: .standard,
+-        hintText: _searchController.hintText ?? '搜索',
++        hintText: _koHint(_searchController.hintText) ?? '搜索',
+         border: InputBorder.none,
+       ),
+       onSubmitted: (value) => _searchController.submit(),
+     ),
++    ),
+   );
+ 
++  // 한국어 번역: 검색창 기본 문구
++  String? _koHint(String? h) {
++    if (h == null || !KoTr.searchOn) return h;
++    KoTr.want(h);
++    return KoTr.show(h);
++  }
++
+   Widget _buildSearchSuggest() {
+     return Obx(() {
+       final list = _searchController.searchSuggestList;
+@@ -148,9 +175,12 @@ class _SearchPageState extends State<SearchPage> {
+                       ),
+                       child: Padding(
+                         padding: const .only(left: 20, top: 9, bottom: 9),
+-                        child: Text.rich(
++                        child: KoBuilder(
++                          text: koJoin(Em.regTitle(item.textRich)),
++                          enabled: KoTr.searchOn,
++                          builder: (context, ko) => Text.rich(
+                           TextSpan(
+-                            children: Em.regTitle(item.textRich)
++                            children: koEm(Em.regTitle(item.textRich), ko)
+                                 .map(
+                                   (e) => TextSpan(
+                                     text: e.text,
+@@ -164,7 +194,7 @@ class _SearchPageState extends State<SearchPage> {
+                                 )
+                                 .toList(),
+                           ),
+-                        ),
++                        )),
+                       ),
+                     ),
+                   )
+diff --git a/lib/pages/search/widgets/hot_keyword.dart b/lib/pages/search/widgets/hot_keyword.dart
+index f35d7f7..9b56398 100644
+--- a/lib/pages/search/widgets/hot_keyword.dart
++++ b/lib/pages/search/widgets/hot_keyword.dart
+@@ -1,3 +1,5 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
++import 'package:PiliPlus/ko/ko_translate.dart';
+ import 'package:PiliPlus/common/assets.dart';
+ import 'package:PiliPlus/models_new/search/search_trending/list.dart';
+ import 'package:PiliPlus/utils/extension/string_ext.dart';
+@@ -52,8 +54,9 @@ class SliverHotKeyword extends StatelessWidget {
+                           Flexible(
+                             child: Padding(
+                               padding: const .fromLTRB(6, 5, 0, 5),
+-                              child: Text(
++                              child: KoText(
+                                 i.showName,
++                                enabled: KoTr.searchOn,
+                                 overflow: TextOverflow.ellipsis,
+                                 maxLines: 1,
+                                 style: const TextStyle(fontSize: 14),
+@@ -81,7 +84,7 @@ class SliverHotKeyword extends StatelessWidget {
+                               ),
+                             )
+                           else if (i.recommendReason?.isNotEmpty == true)
+-                            Text(i.recommendReason!, style: style),
++                            KoText(i.recommendReason!, enabled: KoTr.searchOn, style: style),
+                         ],
+                       ),
+                     ),
+diff --git a/lib/pages/search/widgets/search_text.dart b/lib/pages/search/widgets/search_text.dart
+index 0bdd836..c84066e 100644
+--- a/lib/pages/search/widgets/search_text.dart
++++ b/lib/pages/search/widgets/search_text.dart
+@@ -1,3 +1,5 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
++import 'package:PiliPlus/ko/ko_translate.dart';
+ import 'package:PiliPlus/utils/platform_utils.dart';
+ import 'package:material_ui/material_ui.dart';
+ 
+@@ -47,8 +49,9 @@ class SearchText extends StatelessWidget {
+         borderRadius: borderRadius,
+         child: Padding(
+           padding: padding,
+-          child: Text(
++          child: KoText(
+             text,
++            enabled: KoTr.searchOn,
+             maxLines: maxLines,
+             overflow: overflow,
+             textAlign: textAlign,
 diff --git a/lib/pages/search_panel/all/widgets/activity.dart b/lib/pages/search_panel/all/widgets/activity.dart
 index fb404a5..ba5970a 100644
 --- a/lib/pages/search_panel/all/widgets/activity.dart
@@ -1026,6 +1234,100 @@ index ad2e8fa..0a5f996 100644
                  video.title,
                  maxLines: 2,
                  overflow: .ellipsis,
+diff --git a/lib/pages/search_panel/article/widgets/item.dart b/lib/pages/search_panel/article/widgets/item.dart
+index d47e6d4..d21ed1d 100644
+--- a/lib/pages/search_panel/article/widgets/item.dart
++++ b/lib/pages/search_panel/article/widgets/item.dart
+@@ -1,3 +1,5 @@
++import 'package:PiliPlus/ko/ko_translate.dart';
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+@@ -64,10 +66,10 @@ class SearchArticleItem extends StatelessWidget {
+                   mainAxisSize: MainAxisSize.min,
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+-                    Text.rich(
++                    KoBuilder(text: koJoin(item.title), enabled: KoTr.textOn, builder: (context, ko) => Text.rich(
+                       maxLines: 2,
+                       TextSpan(
+-                        children: item.title
++                        children: koEm(item.title, ko)
+                             .map(
+                               (e) => TextSpan(
+                                 text: e.text,
+@@ -80,7 +82,7 @@ class SearchArticleItem extends StatelessWidget {
+                             )
+                             .toList(),
+                       ),
+-                    ),
++                    )),
+                     const Spacer(),
+                     Text(
+                       DateFormatUtils.dateFormat(item.pubTime),
+diff --git a/lib/pages/search_panel/live/widgets/item.dart b/lib/pages/search_panel/live/widgets/item.dart
+index 23bcd09..a207147 100644
+--- a/lib/pages/search_panel/live/widgets/item.dart
++++ b/lib/pages/search_panel/live/widgets/item.dart
+@@ -1,3 +1,5 @@
++import 'package:PiliPlus/ko/ko_translate.dart';
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+@@ -71,9 +73,9 @@ class LiveItem extends StatelessWidget {
+         crossAxisAlignment: CrossAxisAlignment.start,
+         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+         children: [
+-          Text.rich(
++          KoBuilder(text: koJoin(liveItem.title), enabled: KoTr.textOn, builder: (context, ko) => Text.rich(
+             TextSpan(
+-              children: liveItem.title
++              children: koEm(liveItem.title, ko)
+                   .map(
+                     (e) => TextSpan(
+                       text: e.text,
+@@ -86,7 +88,7 @@ class LiveItem extends StatelessWidget {
+                   )
+                   .toList(),
+             ),
+-          ),
++          )),
+           Text(
+             liveItem.uname!,
+             maxLines: 1,
+diff --git a/lib/pages/search_panel/pgc/widgets/item.dart b/lib/pages/search_panel/pgc/widgets/item.dart
+index 8dc0199..c3b2ee6 100644
+--- a/lib/pages/search_panel/pgc/widgets/item.dart
++++ b/lib/pages/search_panel/pgc/widgets/item.dart
+@@ -1,3 +1,5 @@
++import 'package:PiliPlus/ko/ko_translate.dart';
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+@@ -61,9 +63,9 @@ class SearchPgcItem extends StatelessWidget {
+                 child: Column(
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+-                    Text.rich(
++                    KoBuilder(text: koJoin(item.title), enabled: KoTr.textOn, builder: (context, ko) => Text.rich(
+                       TextSpan(
+-                        children: item.title
++                        children: koEm(item.title, ko)
+                             .map(
+                               (e) => TextSpan(
+                                 text: e.text,
+@@ -76,7 +78,7 @@ class SearchPgcItem extends StatelessWidget {
+                             )
+                             .toList(),
+                       ),
+-                    ),
++                    )),
+                     const SizedBox(height: 12),
+                     Text('评分:${item.mediaScore?['score']}', style: style),
+                     Text.rich(
 diff --git a/lib/pages/search_panel/user/widgets/item.dart b/lib/pages/search_panel/user/widgets/item.dart
 index 16e3127..67086eb 100644
 --- a/lib/pages/search_panel/user/widgets/item.dart
@@ -1246,17 +1548,51 @@ index 6c9878c..9439cdf 100644
                widget.item.newEp!.desc!,
                style: smallTitle,
              ),
+diff --git a/lib/pages/video/introduction/ugc/controller.dart b/lib/pages/video/introduction/ugc/controller.dart
+index fb6a999..7851693 100644
+--- a/lib/pages/video/introduction/ugc/controller.dart
++++ b/lib/pages/video/introduction/ugc/controller.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_translate.dart';
+ import 'dart:async';
+ import 'dart:math';
+ 
+@@ -114,6 +115,8 @@ class UgcIntroController extends CommonIntroController with ReloadMixin {
+           ..isPageReversed = currentDetail.isPageReversed;
+       }
+       videoDetail.value = response;
++      // 한국어 번역: 작품별 용어집 자동 적용용 영상 정보
++      KoTr.addContext(bvid, response.title);
+       try {
+         if (videoDetailCtr.cover.value.isEmpty ||
+             (videoDetailCtr.videoUrl.isNullOrEmpty &&
 diff --git a/lib/pages/video/introduction/ugc/view.dart b/lib/pages/video/introduction/ugc/view.dart
-index cb0b3df..12c93dd 100644
+index cb0b3df..82b950e 100644
 --- a/lib/pages/video/introduction/ugc/view.dart
 +++ b/lib/pages/video/introduction/ugc/view.dart
-@@ -1,3 +1,5 @@
+@@ -1,3 +1,6 @@
++import 'package:PiliPlus/ko/ko_fix.dart';
 +import 'package:PiliPlus/ko/ko_translate.dart';
 +import 'package:PiliPlus/ko/ko_widgets.dart';
  import 'package:PiliPlus/common/assets.dart';
  import 'package:PiliPlus/common/constants.dart';
  import 'package:PiliPlus/common/style.dart';
-@@ -285,9 +287,20 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
+@@ -268,7 +271,13 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
+     return GestureDetector(
+       onLongPress: () {
+         Feedback.forLongPress(context);
+-        Utils.copyText(videoDetail.title ?? '');
++        // 한국어 번역: 번역된 제목이면 '번역 고치기' 화면 (복사·원문 보기도 거기서)
++        final t = videoDetail.title ?? '';
++        if (KoTr.enabled && KoTr.needs(t)) {
++          KoFix.open(t, origId: t);
++          return;
++        }
++        Utils.copyText(t);
+       },
+       child: _buildVideoTitle(videoDetail, isExpand: isExpand),
+     );
+@@ -285,9 +294,20 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
      ),
      if (videoDetail.descV2 case final descV2? when descV2.isNotEmpty) ...[
        const SizedBox(height: 8),
@@ -1280,16 +1616,20 @@ index cb0b3df..12c93dd 100644
        ),
      ],
      NoTranslucentArea(
-@@ -405,7 +418,7 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
+@@ -405,7 +425,11 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
              ),
              const TextSpan(text: ' '),
            ],
 -          TextSpan(text: videoDetail.title),
-+          TextSpan(text: KoTr.textOn ? KoTr.show(videoDetail.title ?? '') : videoDetail.title),
++          TextSpan(
++            text: KoTr.textOn && !KoTr.showOrig.contains(videoDetail.title)
++                ? KoTr.show(videoDetail.title ?? '')
++                : videoDetail.title,
++          ),
          ],
        );
        if (isSelectable) {
-@@ -422,6 +435,16 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
+@@ -422,6 +446,16 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
        );
      }
  
@@ -1306,7 +1646,7 @@ index cb0b3df..12c93dd 100644
      if (videoDetailCtr.plPlayerController.enableSponsorBlock) {
        return Obx(child);
      }
-@@ -568,7 +591,7 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
+@@ -568,7 +602,7 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
        switch (currentDesc.type) {
          case 1:
            final List<InlineSpan> spanChildren = <InlineSpan>[];
@@ -1315,7 +1655,7 @@ index cb0b3df..12c93dd 100644
              urlRegExp,
              onMatch: (Match match) {
                final matchStr = match[0]!;
-@@ -876,7 +899,7 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
+@@ -876,7 +910,7 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
                        : null,
                  ),
                ),
@@ -1388,16 +1728,17 @@ index 3deb156..8ab0b35 100644
                    '${NumUtils.numFormat(voteCard.count.toInt())}人参与',
                    maxLines: 1,
 diff --git a/lib/pages/video/reply/widgets/reply_item_grpc.dart b/lib/pages/video/reply/widgets/reply_item_grpc.dart
-index e6ccd65..a43c131 100644
+index e6ccd65..0826fbe 100644
 --- a/lib/pages/video/reply/widgets/reply_item_grpc.dart
 +++ b/lib/pages/video/reply/widgets/reply_item_grpc.dart
-@@ -1,3 +1,5 @@
+@@ -1,3 +1,6 @@
++import 'package:PiliPlus/ko/ko_fix.dart';
 +import 'package:PiliPlus/ko/ko_translate.dart';
 +import 'package:PiliPlus/ko/ko_widgets.dart';
  import 'dart:math';
  
  import 'package:PiliPlus/common/assets.dart';
-@@ -334,6 +336,14 @@ class ReplyItemGrpc extends StatelessWidget {
+@@ -334,6 +337,14 @@ class ReplyItemGrpc extends StatelessWidget {
              padding: padding,
              child: _buildVoteOption(colorScheme, replyControl.voteOption),
            ),
@@ -1412,7 +1753,7 @@ index e6ccd65..a43c131 100644
          Padding(
            padding: padding,
            child: TextMore.rich(
-@@ -359,7 +369,9 @@ class ReplyItemGrpc extends StatelessWidget {
+@@ -359,7 +370,9 @@ class ReplyItemGrpc extends StatelessWidget {
                  _buildMessage(
                    context,
                    colorScheme,
@@ -1423,7 +1764,7 @@ index e6ccd65..a43c131 100644
                        ? replyItem.translatedContent
                        : replyItem.content,
                    replyControl,
-@@ -368,6 +380,29 @@ class ReplyItemGrpc extends StatelessWidget {
+@@ -368,6 +381,25 @@ class ReplyItemGrpc extends StatelessWidget {
              ),
            ),
          ),
@@ -1432,16 +1773,12 @@ index e6ccd65..a43c131 100644
 +            padding: padding,
 +            child: GestureDetector(
 +              behavior: HitTestBehavior.opaque,
-+              onTap: () {
-+                if (!KoTr.showOrig.remove(replyItem.id)) {
-+                  KoTr.showOrig.add(replyItem.id);
-+                }
-+                (context as Element).markNeedsBuild();
-+              },
++              onTap: () => KoTr.toggleOrig(replyItem.id),
 +              child: Padding(
 +                padding: const EdgeInsets.only(top: 2, bottom: 4),
 +                child: Text(
-+                  KoTr.showOrig.contains(replyItem.id) ? '번역 보기' : '원문 보기',
++                  '${KoTr.showOrig.contains(replyItem.id) ? '번역 보기' : '원문 보기'}'
++                  '${KoTr.viaGoogle(replyItem.content.message) ? '  · ↩구글 번역' : ''}',
 +                  style: TextStyle(fontSize: 12, color: colorScheme.primary),
 +                ),
 +              ),
@@ -1453,7 +1790,22 @@ index e6ccd65..a43c131 100644
          if (replyItem.content.pictures.isNotEmpty) ...[
            Padding(
              padding: padding,
-@@ -656,7 +691,7 @@ class ReplyItemGrpc extends StatelessWidget {
+@@ -393,7 +425,13 @@ class ReplyItemGrpc extends StatelessWidget {
+         if (replyLevel == 1 && replyItem.count > Int64.ZERO) ...[
+           Padding(
+             padding: const EdgeInsets.only(top: 5, bottom: 12),
+-            child: replyItemRow(context, colorScheme, replyItem.replies),
++            // 한국어 번역: 미리 보이는 답글도 번역이 오면 바로 바뀌게
++            child: KoWatch(
++              texts: [for (final r in replyItem.replies) r.content.message],
++              enabled: KoTr.replyOn,
++              builder: (context) =>
++                  replyItemRow(context, colorScheme, replyItem.replies),
++            ),
+           ),
+         ],
+       ],
+@@ -656,7 +694,7 @@ class ReplyItemGrpc extends StatelessWidget {
                            _buildMessage(
                              context,
                              colorScheme,
@@ -1462,7 +1814,7 @@ index e6ccd65..a43c131 100644
                              childReply.replyControl,
                            ),
                          ],
-@@ -705,6 +740,17 @@ class ReplyItemGrpc extends StatelessWidget {
+@@ -705,6 +743,17 @@ class ReplyItemGrpc extends StatelessWidget {
      );
    }
  
@@ -1480,6 +1832,24 @@ index e6ccd65..a43c131 100644
    InlineSpan _buildMessage(
      BuildContext context,
      ColorScheme colorScheme,
+@@ -1203,6 +1252,17 @@ class ReplyItemGrpc extends StatelessWidget {
+                 style: style,
+               ),
+             ),
++          // 한국어 번역: 번역 고치기
++          if (KoTr.enabled && KoTr.needs(item.content.message))
++            ListTile(
++              onTap: () {
++                Get.back();
++                KoFix.open(item.content.message, origId: item.id);
++              },
++              minLeadingWidth: 0,
++              leading: const Icon(Icons.translate, size: 19),
++              title: Text('번역 고치기', style: style),
++            ),
+           ListTile(
+             onTap: () {
+               Get.back();
 diff --git a/lib/pages/video/view_point/view.dart b/lib/pages/video/view_point/view.dart
 index dcc46c5..146f108 100644
 --- a/lib/pages/video/view_point/view.dart
@@ -1498,3 +1868,56 @@ index dcc46c5..146f108 100644
                        segment.title ?? '',
                        maxLines: 2,
                        overflow: TextOverflow.ellipsis,
+diff --git a/lib/plugin/pl_player/view/view.dart b/lib/plugin/pl_player/view/view.dart
+index e44e288..65db8a1 100644
+--- a/lib/plugin/pl_player/view/view.dart
++++ b/lib/plugin/pl_player/view/view.dart
+@@ -1,3 +1,5 @@
++import 'package:PiliPlus/ko/ko_fix.dart';
++import 'package:PiliPlus/ko/ko_translate.dart';
+ import 'dart:async';
+ import 'dart:io';
+ import 'dart:math' as math;
+@@ -2263,7 +2265,11 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
+ 
+     final seekOffset = _getValidOffset(item.content.text);
+ 
+-    final overlayWidth = _actionItemWidth * (seekOffset == null ? 3 : 4);
++    // 한국어 번역: 번역된 탄막이면 '번역 고치기' 버튼 추가
++    final koOrig = KoTr.origOf(item.content.text);
++
++    final overlayWidth =
++        _actionItemWidth * ((seekOffset == null ? 3 : 4) + (koOrig != null ? 1 : 0));
+ 
+     final top = dy + item.height + _triangleHeight + 2;
+ 
+@@ -2338,6 +2344,14 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
+                 ),
+                 onTap: () => Utils.copyText(item.content.text),
+               ),
++              if (koOrig != null)
++                _dmActionItem(
++                  const Icon(size: 19, Icons.translate, color: Colors.white),
++                  onTap: () async {
++                    _removeDmAction();
++                    KoFix.open(koOrig);
++                  },
++                ),
+               if (item.content.selfSend)
+                 _dmActionItem(
+                   const Icon(
+@@ -2393,6 +2407,14 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
+                 ),
+                 onTap: () => Utils.copyText(item.content.text),
+               ),
++              if (koOrig != null)
++                _dmActionItem(
++                  const Icon(size: 19, Icons.translate, color: Colors.white),
++                  onTap: () async {
++                    _removeDmAction();
++                    KoFix.open(koOrig);
++                  },
++                ),
+               _dmActionItem(
+                 const Icon(
+                   size: 20,

@@ -1,5 +1,6 @@
 // 한국어 번역 설정 항목 (설정 → 弹幕设置 맨 위)
 import 'package:PiliPlus/ko/ko_translate.dart';
+import 'package:PiliPlus/ko/ko_works.dart';
 import 'package:PiliPlus/pages/setting/models/model.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
@@ -18,6 +19,7 @@ List<SettingsModel> get koSettings => [
     title: '번역기',
     getSubtitle: () => KoTr.engine == 'gemini'
         ? '제미나이 — 밈·은어를 뜻이 통하게 의역 (무료 키 필요)'
+              '${KoTr.lastGeminiError != null ? '\n최근 제미나이 실패: ${KoTr.lastGeminiError} → 구글로 대신 번역 중' : ''}'
         : '구글 번역 — 무료, 키 필요 없음, 빠름',
     leading: const Icon(Icons.language),
     onTap: _pickEngine,
@@ -63,6 +65,20 @@ List<SettingsModel> get koSettings => [
     defaultVal: true,
   ),
   const SwitchModel(
+    title: '검색 화면 번역',
+    subtitle: '인기 검색어·추천 검색어·자동완성을 한국어로 (누르면 원래 중국어로 검색)',
+    leading: Icon(Icons.manage_search),
+    setKey: KoTr.kSearch,
+    defaultVal: true,
+  ),
+  const SwitchModel(
+    title: '한국어로 검색',
+    subtitle: '검색어에 한국어가 있으면 중국어로 바꿔서 검색해요',
+    leading: Icon(Icons.search),
+    setKey: KoTr.kSearchKo,
+    defaultVal: true,
+  ),
+  const SwitchModel(
     title: '탄막 번역',
     leading: Icon(Icons.chat_bubble_outline),
     setKey: KoTr.kDm,
@@ -96,21 +112,56 @@ List<SettingsModel> get koSettings => [
     defaultVal: true,
   ),
   NormalModel(
-    title: '용어집',
+    title: '공통 용어집',
     getSubtitle: () {
-      final n = KoTr.glossary.length;
-      return n == 0 ? "한 줄에 하나씩 '중국어=한국어' (예: 阿米娅=아미야)" : '$n개';
+      final n = KoTr.parseGlossary(KoTr.commonGlossaryText).length;
+      return n == 0
+          ? "작품과 상관없이 늘 쓰는 단어. 한 줄에 하나씩 '중국어=한국어' (예: 主播=스트리머)"
+          : '$n개';
     },
     leading: const Icon(Icons.book_outlined),
     onTap: (context, setState) => _editText(
       context,
       setState,
-      title: "용어집 (한 줄에 하나씩 '중국어=한국어')",
+      title: "공통 용어집 (한 줄에 하나씩 '중국어=한국어')",
       key: KoTr.kGlossary,
-      hint: '阿米娅=아미야\n罗德岛=로도스 아일랜드',
+      hint: '主播=스트리머\n弹幕=탄막',
       multiline: true,
-      onSaved: KoTr.clearCache,
+      onSave: KoTr.setCommonGlossary,
     ),
+  ),
+  NormalModel(
+    title: '작품별 용어집',
+    getSubtitle: () {
+      final n = KoTr.works.length;
+      final act = KoTr.activeWorks.map((e) => e.name).join(', ');
+      return n == 0
+          ? '작품마다 용어집을 따로 (영상 제목·태그로 자동 적용, 자동 만들기 가능)'
+          : '$n개${act.isEmpty ? '' : ' · 지금 적용 중: $act'}';
+    },
+    leading: const Icon(Icons.collections_bookmark_outlined),
+    onTap: (context, setState) async {
+      await Get.to(() => const KoWorksPage());
+      setState();
+    },
+  ),
+  NormalModel(
+    title: '공통 용어집 점검',
+    subtitle: '웹 검색·제미나이로 표기가 틀린 항목 찾기 (제미나이 키 필요)',
+    leading: const Icon(Icons.fact_check_outlined),
+    onTap: (context, setState) async {
+      await checkGlossary(context, null);
+      setState();
+    },
+  ),
+  NormalModel(
+    title: '직접 고친 번역',
+    getSubtitle: () => '${KoTr.overrides.length}개 · 댓글·탄막 메뉴나 제목 길게 누르기의 [번역 고치기]로 고친 것',
+    leading: const Icon(Icons.edit_note),
+    onTap: (context, setState) async {
+      await Get.to(() => const KoOverridesPage());
+      setState();
+    },
   ),
   NormalModel(
     title: '번역 테스트',
@@ -173,7 +224,7 @@ void _editText(
   required String key,
   String hint = '',
   bool multiline = false,
-  VoidCallback? onSaved,
+  ValueChanged<String>? onSave,
 }) {
   final ctrl = TextEditingController(
     text: (GStorage.setting.get(key, defaultValue: '') as String?) ?? '',
@@ -193,8 +244,11 @@ void _editText(
         TextButton(onPressed: Get.back, child: const Text('취소')),
         TextButton(
           onPressed: () {
-            GStorage.setting.put(key, ctrl.text.trim());
-            onSaved?.call();
+            if (onSave != null) {
+              onSave(ctrl.text.trim());
+            } else {
+              GStorage.setting.put(key, ctrl.text.trim());
+            }
             Get.back();
             setState();
           },
