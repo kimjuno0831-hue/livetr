@@ -1,3 +1,39 @@
+diff --git a/lib/common/widgets/video_card/video_card_h.dart b/lib/common/widgets/video_card/video_card_h.dart
+index 0aab73f..70776db 100644
+--- a/lib/common/widgets/video_card/video_card_h.dart
++++ b/lib/common/widgets/video_card/video_card_h.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+@@ -172,7 +173,7 @@ class VideoCardH extends StatelessWidget {
+             )
+           else
+             Expanded(
+-              child: Text(
++              child: KoText(
+                 videoItem.title,
+                 textAlign: .start,
+                 style: TextStyle(
+diff --git a/lib/common/widgets/video_card/video_card_v.dart b/lib/common/widgets/video_card/video_card_v.dart
+index b382e11..b8e3b3e 100644
+--- a/lib/common/widgets/video_card/video_card_v.dart
++++ b/lib/common/widgets/video_card/video_card_v.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+@@ -158,7 +159,7 @@ class VideoCardV extends StatelessWidget {
+           crossAxisAlignment: .start,
+           children: [
+             Expanded(
+-              child: Text(
++              child: KoText(
+                 videoItem.title,
+                 maxLines: 2,
+                 overflow: .ellipsis,
 diff --git a/lib/http/video.dart b/lib/http/video.dart
 index 0817215..f500dff 100644
 --- a/lib/http/video.dart
@@ -32,6 +68,114 @@ index 0817215..f500dff 100644
        switch (format) {
          case .json:
            throw UnimplementedError();
+diff --git a/lib/pages/article/view.dart b/lib/pages/article/view.dart
+index c153660..0c1e939 100644
+--- a/lib/pages/article/view.dart
++++ b/lib/pages/article/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'dart:math';
+ 
+ import 'package:PiliPlus/common/widgets/badge.dart';
+@@ -248,7 +249,7 @@ class _ArticlePageState extends CommonDynPageState<ArticlePage>
+               if (controller.summary.title != null)
+                 SliverToBoxWithVisibilityAdapter(
+                   onVisibilityChanged: controller.showTitle.call,
+-                  child: Text(
++                  child: KoText(
+                     controller.summary.title!,
+                     style: const TextStyle(fontSize: 17, fontWeight: .bold),
+                   ),
+diff --git a/lib/pages/article/widgets/opus_content.dart b/lib/pages/article/widgets/opus_content.dart
+index 5833aa3..9b647bf 100644
+--- a/lib/pages/article/widgets/opus_content.dart
++++ b/lib/pages/article/widgets/opus_content.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'dart:math' as math;
+ 
+ import 'package:PiliPlus/common/assets.dart';
+@@ -698,7 +699,7 @@ class OpusContent extends StatelessWidget {
+                             crossAxisAlignment: .start,
+                             mainAxisAlignment: .spaceBetween,
+                             children: [
+-                              Text(
++                              KoText(
+                                 info.title!,
+                                 maxLines: 2,
+                                 overflow: .ellipsis,
+@@ -738,7 +739,7 @@ class OpusContent extends StatelessWidget {
+                             crossAxisAlignment: .start,
+                             mainAxisAlignment: .spaceBetween,
+                             children: [
+-                              Text(
++                              KoText(
+                                 info.title!,
+                                 maxLines: 2,
+                                 overflow: .ellipsis,
+diff --git a/lib/pages/article_list/widgets/item.dart b/lib/pages/article_list/widgets/item.dart
+index 7e2a60f..0d9fdf1 100644
+--- a/lib/pages/article_list/widgets/item.dart
++++ b/lib/pages/article_list/widgets/item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+ import 'package:PiliPlus/common/widgets/stat/stat.dart';
+@@ -57,7 +58,7 @@ class ArticleListItem extends StatelessWidget {
+                   mainAxisSize: MainAxisSize.min,
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+-                    Text(
++                    KoText(
+                       item.title!,
+                       style: const TextStyle(
+                         fontSize: 14,
+@@ -69,7 +70,7 @@ class ArticleListItem extends StatelessWidget {
+                     ),
+                     const SizedBox(height: 3),
+                     if (item.summary != null)
+-                      Text(
++                      KoText(
+                         item.summary!,
+                         style: TextStyle(
+                           fontSize: 12,
+diff --git a/lib/pages/audio/view.dart b/lib/pages/audio/view.dart
+index 365ffcd..2ec3ff7 100644
+--- a/lib/pages/audio/view.dart
++++ b/lib/pages/audio/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'dart:math' show min;
+ 
+ import 'package:PiliPlus/common/assets.dart';
+@@ -236,7 +237,7 @@ class _AudioPageState extends State<AudioPage> {
+                         initiallyExpanded: isCurr,
+                         collapsedIconColor: isCurr ? colorScheme.primary : null,
+                         iconColor: isCurr ? null : colorScheme.onSurfaceVariant,
+-                        title: Text(
++                        title: KoText(
+                           item.arc.title,
+                           maxLines: 1,
+                           overflow: TextOverflow.ellipsis,
+diff --git a/lib/pages/bubble/view.dart b/lib/pages/bubble/view.dart
+index bed20cd..f2c9fb1 100644
+--- a/lib/pages/bubble/view.dart
++++ b/lib/pages/bubble/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/widgets/flutter/list_tile.dart';
+ import 'package:PiliPlus/common/widgets/flutter/refresh_indicator.dart';
+ import 'package:PiliPlus/common/widgets/keep_alive_wrapper.dart';
+@@ -209,7 +210,7 @@ class _BubblePageState extends State<BubblePage>
+                       'type': 'opus',
+                     },
+                   ),
+-                  title: Text(
++                  title: KoText(
+                     item.title!,
+                     maxLines: 1,
+                     overflow: .ellipsis,
 diff --git a/lib/pages/danmaku/controller.dart b/lib/pages/danmaku/controller.dart
 index 456870d..d15b478 100644
 --- a/lib/pages/danmaku/controller.dart
@@ -122,6 +266,348 @@ index aa9d44a..0213ebc 100644
                color: blockColorful
                    ? Colors.white
                    : DmUtils.decimalToColor(e.color),
+diff --git a/lib/pages/download/download/widgets/page.dart b/lib/pages/download/download/widgets/page.dart
+index ccabb74..10e42ce 100644
+--- a/lib/pages/download/download/widgets/page.dart
++++ b/lib/pages/download/download/widgets/page.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/dialog/dialog.dart';
+@@ -140,7 +141,7 @@ class PageInfoItem<T extends MultiSelectData> extends StatelessWidget {
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+                     Expanded(
+-                      child: Text(
++                      child: KoText(
+                         pageInfo.title,
+                         textAlign: TextAlign.start,
+                         style: const TextStyle(
+diff --git a/lib/pages/download/download/widgets/season.dart b/lib/pages/download/download/widgets/season.dart
+index 8de1823..ee8f9ea 100644
+--- a/lib/pages/download/download/widgets/season.dart
++++ b/lib/pages/download/download/widgets/season.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/dialog/dialog.dart';
+@@ -136,7 +137,7 @@ class SeasonInfoItem extends StatelessWidget {
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+                     Expanded(
+-                      child: Text(
++                      child: KoText(
+                         seasonInfo.title,
+                         textAlign: TextAlign.start,
+                         style: const TextStyle(
+diff --git a/lib/pages/dynamics/widgets/additional_panel.dart b/lib/pages/dynamics/widgets/additional_panel.dart
+index c9d0e9a..08c5502 100644
+--- a/lib/pages/dynamics/widgets/additional_panel.dart
++++ b/lib/pages/dynamics/widgets/additional_panel.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/gesture/tap_gesture_recognizer.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+@@ -51,7 +52,7 @@ Widget? addWidget(
+                   child: Column(
+                     crossAxisAlignment: CrossAxisAlignment.start,
+                     children: [
+-                      Text(
++                      KoText(
+                         ugc.title!,
+                         maxLines: 2,
+                         overflow: TextOverflow.ellipsis,
+@@ -86,7 +87,7 @@ Widget? addWidget(
+                     child: Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+-                        Text(
++                        KoText(
+                           reserve.title!,
+                           maxLines: 1,
+                           overflow: TextOverflow.ellipsis,
+@@ -590,7 +591,7 @@ Widget? addWidget(
+         }
+         Widget? title;
+         if (content.matchInfo?.title?.isNotEmpty == true) {
+-          title = Text(
++          title = KoText(
+             content.matchInfo!.title!,
+             style: const TextStyle(fontSize: 13),
+           );
+diff --git a/lib/pages/dynamics/widgets/live_panel.dart b/lib/pages/dynamics/widgets/live_panel.dart
+index 2750002..109c1f4 100644
+--- a/lib/pages/dynamics/widgets/live_panel.dart
++++ b/lib/pages/dynamics/widgets/live_panel.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+ import 'package:PiliPlus/models/dynamics/result.dart';
+ import 'package:material_ui/material_ui.dart';
+@@ -31,7 +32,7 @@ Widget livePanel(
+           child: Column(
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+-              Text(
++              KoText(
+                 live.title!,
+                 maxLines: isDetail ? null : 2,
+                 overflow: isDetail ? null : TextOverflow.ellipsis,
+diff --git a/lib/pages/dynamics/widgets/module_panel.dart b/lib/pages/dynamics/widgets/module_panel.dart
+index 36f0d2c..07e5bfe 100644
+--- a/lib/pages/dynamics/widgets/module_panel.dart
++++ b/lib/pages/dynamics/widgets/module_panel.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+@@ -160,7 +161,7 @@ Widget module(
+                         overflow: TextOverflow.ellipsis,
+                       ),
+                       if (common.desc?.isNotEmpty ?? false)
+-                        Text(
++                        KoText(
+                           common.desc!,
+                           style: TextStyle(
+                             color: theme.colorScheme.outline,
+@@ -215,7 +216,7 @@ Widget module(
+                   child: Column(
+                     crossAxisAlignment: CrossAxisAlignment.start,
+                     children: [
+-                      Text(
++                      KoText(
+                         music.title!,
+                         style: TextStyle(
+                           color: theme.colorScheme.primary,
+@@ -275,7 +276,7 @@ Widget module(
+                 crossAxisAlignment: CrossAxisAlignment.start,
+                 children: [
+                   const SizedBox(height: 4),
+-                  Text(
++                  KoText(
+                     major!.medialist!.title!,
+                     style: TextStyle(
+                       fontSize: theme.textTheme.titleMedium!.fontSize,
+diff --git a/lib/pages/dynamics/widgets/vote.dart b/lib/pages/dynamics/widgets/vote.dart
+index c430827..1da65d5 100644
+--- a/lib/pages/dynamics/widgets/vote.dart
++++ b/lib/pages/dynamics/widgets/vote.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'dart:async';
+ 
+ import 'package:PiliPlus/common/widgets/avatars.dart';
+@@ -140,7 +141,7 @@ class _VotePanelState extends State<VotePanel> {
+         ),
+       ],
+     ];
+-    Widget title = Text(
++    Widget title = KoText(
+       _voteInfo.title ?? '',
+       style: theme.textTheme.titleMedium,
+     );
+@@ -238,7 +239,7 @@ class _VotePanelState extends State<VotePanel> {
+       children: [
+         title,
+         if (_voteInfo.desc != null)
+-          Text(
++          KoText(
+             _voteInfo.desc!,
+             style: theme.textTheme.titleSmall!.copyWith(
+               color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+diff --git a/lib/pages/fav/article/widget/item.dart b/lib/pages/fav/article/widget/item.dart
+index 39a1ac3..c37f50e 100644
+--- a/lib/pages/fav/article/widget/item.dart
++++ b/lib/pages/fav/article/widget/item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/button/icon_button.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+@@ -62,7 +63,7 @@ class FavArticleItem extends StatelessWidget {
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         Expanded(
+-                          child: Text(
++                          child: KoText(
+                             item.content!,
+                             style: TextStyle(
+                               fontSize: theme.textTheme.bodyMedium!.fontSize,
+diff --git a/lib/pages/fav/note/widget/item.dart b/lib/pages/fav/note/widget/item.dart
+index df56f81..db8f4f2 100644
+--- a/lib/pages/fav/note/widget/item.dart
++++ b/lib/pages/fav/note/widget/item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+ import 'package:PiliPlus/common/widgets/select_mask.dart';
+@@ -80,7 +81,7 @@ class FavNoteItem extends StatelessWidget {
+                 child: Column(
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+-                    Text(
++                    KoText(
+                       item.title ?? '',
+                       maxLines: 2,
+                       overflow: TextOverflow.ellipsis,
+@@ -90,7 +91,7 @@ class FavNoteItem extends StatelessWidget {
+                       ),
+                     ),
+                     const Spacer(),
+-                    Text(
++                    KoText(
+                       item.summary ?? '',
+                       maxLines: 1,
+                       style: TextStyle(
+diff --git a/lib/pages/fav/video/widgets/item.dart b/lib/pages/fav/video/widgets/item.dart
+index 48e83f6..1dbf56d 100644
+--- a/lib/pages/fav/video/widgets/item.dart
++++ b/lib/pages/fav/video/widgets/item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+@@ -70,7 +71,7 @@ class FavVideoItem extends StatelessWidget {
+       child: Column(
+         crossAxisAlignment: CrossAxisAlignment.start,
+         children: [
+-          Text(
++          KoText(
+             item.title,
+             textAlign: TextAlign.start,
+             style: const TextStyle(
+@@ -78,7 +79,7 @@ class FavVideoItem extends StatelessWidget {
+             ),
+           ),
+           if (item.intro?.isNotEmpty == true)
+-            Text(
++            KoText(
+               item.intro!,
+               maxLines: 2,
+               overflow: TextOverflow.ellipsis,
+diff --git a/lib/pages/fav_detail/view.dart b/lib/pages/fav_detail/view.dart
+index b74b039..af5009c 100644
+--- a/lib/pages/fav_detail/view.dart
++++ b/lib/pages/fav_detail/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/widgets/button/icon_button.dart';
+ import 'package:PiliPlus/common/widgets/dialog/dialog.dart';
+ import 'package:PiliPlus/common/widgets/flutter/pop_scope.dart';
+@@ -158,7 +159,7 @@ class _FavDetailPageState extends State<FavDetailPage> with GridMixin {
+           : Column(
+               crossAxisAlignment: CrossAxisAlignment.start,
+               children: [
+-                Text(
++                KoText(
+                   _favDetailController.folderInfo.value.title,
+                   style: theme.textTheme.titleMedium,
+                 ),
+@@ -437,7 +438,7 @@ class _FavDetailPageState extends State<FavDetailPage> with GridMixin {
+                         crossAxisAlignment: CrossAxisAlignment.start,
+                         children: [
+                           Expanded(
+-                            child: Text(
++                            child: KoText(
+                               folderInfo.title,
+                               maxLines: 2,
+                               overflow: TextOverflow.ellipsis,
+@@ -460,7 +461,7 @@ class _FavDetailPageState extends State<FavDetailPage> with GridMixin {
+                           ),
+                           const SizedBox(height: 4),
+                           if (folderInfo.intro?.isNotEmpty == true) ...[
+-                            Text(
++                            KoText(
+                               folderInfo.intro!,
+                               style: style,
+                               maxLines: 2,
+diff --git a/lib/pages/fav_detail/widget/fav_video_card.dart b/lib/pages/fav_detail/widget/fav_video_card.dart
+index fc925eb..d82f6eb 100644
+--- a/lib/pages/fav_detail/widget/fav_video_card.dart
++++ b/lib/pages/fav_detail/widget/fav_video_card.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/button/icon_button.dart';
+@@ -164,7 +165,7 @@ class FavVideoCardH extends StatelessWidget {
+             spacing: 3,
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+-              Text(
++              KoText(
+                 item.title!,
+                 textAlign: TextAlign.start,
+                 style: const TextStyle(
+@@ -174,7 +175,7 @@ class FavVideoCardH extends StatelessWidget {
+                 overflow: TextOverflow.ellipsis,
+               ),
+               if (item.type == 24 && item.intro?.isNotEmpty == true)
+-                Text(
++                KoText(
+                   item.intro!,
+                   maxLines: 2,
+                   overflow: TextOverflow.ellipsis,
+diff --git a/lib/pages/history/widgets/item.dart b/lib/pages/history/widgets/item.dart
+index b118556..339a9c0 100644
+--- a/lib/pages/history/widgets/item.dart
++++ b/lib/pages/history/widgets/item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+ import 'package:PiliPlus/common/widgets/select_mask.dart';
+@@ -171,7 +172,7 @@ class HistoryItem extends StatelessWidget {
+         spacing: 2,
+         crossAxisAlignment: CrossAxisAlignment.start,
+         children: [
+-          Text(
++          KoText(
+             item.title!,
+             style: TextStyle(
+               fontSize: theme.textTheme.bodyMedium!.fontSize,
+diff --git a/lib/pages/later/widgets/video_card_h_later.dart b/lib/pages/later/widgets/video_card_h_later.dart
+index 8ef888b..b22a771 100644
+--- a/lib/pages/later/widgets/video_card_h_later.dart
++++ b/lib/pages/later/widgets/video_card_h_later.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/button/icon_button.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+@@ -104,7 +105,7 @@ class VideoCardHLater extends StatelessWidget {
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: isPgc
+                 ? [
+-                    Text(
++                    KoText(
+                       videoItem.bangumi!.season!.title!,
+                       style: TextStyle(
+                         fontSize: theme.textTheme.bodyMedium!.fontSize,
+@@ -115,7 +116,7 @@ class VideoCardHLater extends StatelessWidget {
+                       overflow: TextOverflow.ellipsis,
+                     ),
+                     const SizedBox(height: 3),
+-                    Text(
++                    KoText(
+                       videoItem.subtitle!,
+                       textAlign: TextAlign.start,
+                       style: TextStyle(
+@@ -130,7 +131,7 @@ class VideoCardHLater extends StatelessWidget {
+                   ]
+                 : [
+                     Expanded(
+-                      child: Text(
++                      child: KoText(
+                         videoItem.title!,
+                         style: TextStyle(
+                           fontSize: theme.textTheme.bodyMedium!.fontSize,
 diff --git a/lib/pages/live_room/controller.dart b/lib/pages/live_room/controller.dart
 index cd48e48..5f342f6 100644
 --- a/lib/pages/live_room/controller.dart
@@ -153,6 +639,411 @@ index cd48e48..5f342f6 100644
            break;
          case 'SUPER_CHAT_MESSAGE' when showSuperChat:
            final item = SuperChatItem.fromJson(obj['data'], roomId);
+diff --git a/lib/pages/match_info/widgets/match_info_item.dart b/lib/pages/match_info/widgets/match_info_item.dart
+index 884dfeb..3188b62 100644
+--- a/lib/pages/match_info/widgets/match_info_item.dart
++++ b/lib/pages/match_info/widgets/match_info_item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+ import 'package:PiliPlus/models_new/match/match_info/contest.dart';
+ import 'package:PiliPlus/models_new/match/match_info/team.dart';
+@@ -26,7 +27,7 @@ class MatchInfoItem extends StatelessWidget {
+           fit: .contain,
+         ),
+         if (team.title != null)
+-          Text(
++          KoText(
+             team.title!,
+             style: const TextStyle(fontSize: 13),
+           ),
+@@ -54,7 +55,7 @@ Widget buildTeamInfo(MatchTeam team) {
+         fit: .contain,
+       ),
+       if (team.title != null)
+-        Text(
++        KoText(
+           team.title!,
+           style: const TextStyle(fontSize: 13),
+         ),
+@@ -125,7 +126,7 @@ Widget buildContestItem(ColorScheme colorScheme, MatchContest contest) {
+     mainAxisSize: .min,
+     children: [
+       if (contest.season?.title != null)
+-        Text(
++        KoText(
+           contest.season!.title!,
+           style: const TextStyle(fontWeight: .bold, fontSize: 16),
+         ),
+diff --git a/lib/pages/member/controller.dart b/lib/pages/member/controller.dart
+index ffc1c9d..5d47c35 100644
+--- a/lib/pages/member/controller.dart
++++ b/lib/pages/member/controller.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'dart:math';
+ 
+ import 'package:PiliPlus/http/loading_state.dart';
+@@ -140,7 +141,7 @@ class MemberController extends CommonDataController<SpaceData, SpaceData?>
+         tabs = tab2!
+             .map(
+               (item) => Tab(
+-                child: Text(
++                child: KoText(
+                   item.title ?? '',
+                   softWrap: false,
+                   overflow: .fade,
+diff --git a/lib/pages/member_article/widget/item.dart b/lib/pages/member_article/widget/item.dart
+index 331afb7..3327ba5 100644
+--- a/lib/pages/member_article/widget/item.dart
++++ b/lib/pages/member_article/widget/item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+@@ -62,7 +63,7 @@ class MemberArticleItem extends StatelessWidget {
+                   children: [
+                     if (item.title?.isNotEmpty == true) ...[
+                       Expanded(
+-                        child: Text(
++                        child: KoText(
+                           item.title!,
+                           maxLines: 2,
+                           overflow: TextOverflow.ellipsis,
+diff --git a/lib/pages/member_audio/widgets/item.dart b/lib/pages/member_audio/widgets/item.dart
+index f5688ff..927e532 100644
+--- a/lib/pages/member_audio/widgets/item.dart
++++ b/lib/pages/member_audio/widgets/item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+@@ -62,7 +63,7 @@ class MemberAudioItem extends StatelessWidget {
+                   mainAxisSize: MainAxisSize.min,
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+-                    Text(
++                    KoText(
+                       item.title!,
+                       maxLines: 2,
+                       overflow: TextOverflow.ellipsis,
+diff --git a/lib/pages/member_cheese/widgets/item.dart b/lib/pages/member_cheese/widgets/item.dart
+index da59bff..a507609 100644
+--- a/lib/pages/member_cheese/widgets/item.dart
++++ b/lib/pages/member_cheese/widgets/item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/button/icon_button.dart';
+@@ -26,7 +27,7 @@ class MemberCheeseItem extends StatelessWidget {
+       mainAxisSize: MainAxisSize.min,
+       crossAxisAlignment: CrossAxisAlignment.start,
+       children: [
+-        Text(
++        KoText(
+           item.title!,
+           maxLines: 2,
+           overflow: TextOverflow.ellipsis,
+diff --git a/lib/pages/member_favorite/widget/item.dart b/lib/pages/member_favorite/widget/item.dart
+index 3a9ce3c..fc213aa 100644
+--- a/lib/pages/member_favorite/widget/item.dart
++++ b/lib/pages/member_favorite/widget/item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+@@ -92,7 +93,7 @@ class MemberFavItem extends StatelessWidget {
+                   mainAxisSize: MainAxisSize.min,
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+-                    Text(
++                    KoText(
+                       item.title ?? '',
+                       maxLines: 2,
+                       overflow: TextOverflow.ellipsis,
+diff --git a/lib/pages/member_home/widgets/fav_item.dart b/lib/pages/member_home/widgets/fav_item.dart
+index ccd14fd..5147473 100644
+--- a/lib/pages/member_home/widgets/fav_item.dart
++++ b/lib/pages/member_home/widgets/fav_item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+@@ -51,7 +52,7 @@ class MemberFavItem extends StatelessWidget {
+                   mainAxisSize: MainAxisSize.min,
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+-                    Text(
++                    KoText(
+                       item.title!,
+                       maxLines: 2,
+                       overflow: TextOverflow.ellipsis,
+diff --git a/lib/pages/member_opus/view.dart b/lib/pages/member_opus/view.dart
+index 5ee7959..925238c 100644
+--- a/lib/pages/member_opus/view.dart
++++ b/lib/pages/member_opus/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/skeleton/space_opus.dart';
+ import 'package:PiliPlus/common/sliver_single_child_delegate.dart';
+ import 'package:PiliPlus/common/style.dart';
+@@ -179,7 +180,7 @@ class _MemberOpusState extends State<MemberOpus>
+                 SliverToBoxAdapter(
+                   child: Padding(
+                     padding: const .only(bottom: 10),
+-                    child: Text(
++                    child: KoText(
+                       collection.title,
+                       style: TextStyle(color: colorScheme.outline),
+                     ),
+diff --git a/lib/pages/member_opus/widgets/space_opus_item.dart b/lib/pages/member_opus/widgets/space_opus_item.dart
+index c5fcdbe..86d361f 100644
+--- a/lib/pages/member_opus/widgets/space_opus_item.dart
++++ b/lib/pages/member_opus/widgets/space_opus_item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+ import 'package:PiliPlus/common/widgets/stat/stat.dart';
+ import 'package:PiliPlus/models/common/stat_type.dart';
+@@ -66,7 +67,7 @@ class SpaceOpusItem extends StatelessWidget {
+                   horizontal: 8,
+                   vertical: 10,
+                 ),
+-                child: Text(
++                child: KoText(
+                   item.content!,
+                   maxLines: hasPic ? 4 : 6,
+                   overflow: TextOverflow.ellipsis,
+diff --git a/lib/pages/member_pgc/widgets/pgc_card_v_member_pgc.dart b/lib/pages/member_pgc/widgets/pgc_card_v_member_pgc.dart
+index 5e35206..049510b 100644
+--- a/lib/pages/member_pgc/widgets/pgc_card_v_member_pgc.dart
++++ b/lib/pages/member_pgc/widgets/pgc_card_v_member_pgc.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+@@ -40,7 +41,7 @@ class PgcCardVMemberPgc extends StatelessWidget {
+             ),
+             Padding(
+               padding: const EdgeInsets.fromLTRB(4, 5, 0, 3),
+-              child: Text(
++              child: KoText(
+                 item.title,
+                 textAlign: TextAlign.start,
+                 style: const TextStyle(
+diff --git a/lib/pages/member_shop/widgets/item.dart b/lib/pages/member_shop/widgets/item.dart
+index 598a874..f2690dc 100644
+--- a/lib/pages/member_shop/widgets/item.dart
++++ b/lib/pages/member_shop/widgets/item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+ import 'package:PiliPlus/models/common/badge_type.dart';
+@@ -43,7 +44,7 @@ class MemberShopItem extends StatelessWidget {
+               child: Column(
+                 crossAxisAlignment: CrossAxisAlignment.start,
+                 children: [
+-                  Text(
++                  KoText(
+                     item.title!,
+                     maxLines: 2,
+                     overflow: TextOverflow.ellipsis,
+diff --git a/lib/pages/member_video/widgets/video_card_h_member_video.dart b/lib/pages/member_video/widgets/video_card_h_member_video.dart
+index 5c79de2..1149ba0 100644
+--- a/lib/pages/member_video/widgets/video_card_h_member_video.dart
++++ b/lib/pages/member_video/widgets/video_card_h_member_video.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+@@ -217,7 +218,7 @@ class VideoCardHMemberVideo extends StatelessWidget {
+         crossAxisAlignment: CrossAxisAlignment.start,
+         children: [
+           Expanded(
+-            child: Text(
++            child: KoText(
+               videoItem.title,
+               textAlign: TextAlign.start,
+               style: TextStyle(
+diff --git a/lib/pages/msg_feed_top/like_me/view.dart b/lib/pages/msg_feed_top/like_me/view.dart
+index f9c0a94..290f9b8 100644
+--- a/lib/pages/msg_feed_top/like_me/view.dart
++++ b/lib/pages/msg_feed_top/like_me/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/skeleton/msg_feed_top.dart';
+ import 'package:PiliPlus/common/sliver_single_child_delegate.dart';
+ import 'package:PiliPlus/common/widgets/dialog/dialog.dart';
+@@ -303,7 +304,7 @@ class _LikeMePageState extends State<LikeMePage> {
+         children: [
+           if (item.item?.title?.isNotEmpty == true) ...[
+             const SizedBox(height: 4),
+-            Text(
++            KoText(
+               item.item!.title!,
+               maxLines: 3,
+               overflow: TextOverflow.ellipsis,
+diff --git a/lib/pages/music/widget/music_video_card_h.dart b/lib/pages/music/widget/music_video_card_h.dart
+index 835156d..68315d2 100644
+--- a/lib/pages/music/widget/music_video_card_h.dart
++++ b/lib/pages/music/widget/music_video_card_h.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+@@ -104,7 +105,7 @@ class MusicVideoCardH extends StatelessWidget {
+         crossAxisAlignment: CrossAxisAlignment.start,
+         children: [
+           Expanded(
+-            child: Text(
++            child: KoText(
+               videoItem.title!,
+               textAlign: TextAlign.start,
+               style: const TextStyle(
+diff --git a/lib/pages/pgc/widgets/pgc_card_v.dart b/lib/pages/pgc/widgets/pgc_card_v.dart
+index e1e40dd..1c812e8 100644
+--- a/lib/pages/pgc/widgets/pgc_card_v.dart
++++ b/lib/pages/pgc/widgets/pgc_card_v.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+@@ -84,7 +85,7 @@ class PgcCardV extends StatelessWidget {
+         child: Column(
+           crossAxisAlignment: CrossAxisAlignment.start,
+           children: [
+-            Text(
++            KoText(
+               item.title!,
+               textAlign: TextAlign.start,
+               style: const TextStyle(
+diff --git a/lib/pages/pgc/widgets/pgc_card_v_timeline.dart b/lib/pages/pgc/widgets/pgc_card_v_timeline.dart
+index 87247eb..de8b2c2 100644
+--- a/lib/pages/pgc/widgets/pgc_card_v_timeline.dart
++++ b/lib/pages/pgc/widgets/pgc_card_v_timeline.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+@@ -78,7 +79,7 @@ class PgcCardVTimeline extends StatelessWidget {
+         child: Column(
+           crossAxisAlignment: CrossAxisAlignment.start,
+           children: [
+-            Text(
++            KoText(
+               item.title ?? '',
+               textAlign: TextAlign.start,
+               style: const TextStyle(
+diff --git a/lib/pages/pgc_index/widgets/pgc_card_v_pgc_index.dart b/lib/pages/pgc_index/widgets/pgc_card_v_pgc_index.dart
+index ef0081c..9067bed 100644
+--- a/lib/pages/pgc_index/widgets/pgc_card_v_pgc_index.dart
++++ b/lib/pages/pgc_index/widgets/pgc_card_v_pgc_index.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+@@ -80,7 +81,7 @@ class PgcCardVPgcIndex extends StatelessWidget {
+         child: Column(
+           crossAxisAlignment: CrossAxisAlignment.start,
+           children: [
+-            Text(
++            KoText(
+               item.title!,
+               textAlign: TextAlign.start,
+               style: const TextStyle(
+diff --git a/lib/pages/pgc_review/child/view.dart b/lib/pages/pgc_review/child/view.dart
+index 186b58f..b78d034 100644
+--- a/lib/pages/pgc_review/child/view.dart
++++ b/lib/pages/pgc_review/child/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/skeleton/video_reply.dart';
+ import 'package:PiliPlus/common/sliver_single_child_delegate.dart';
+ import 'package:PiliPlus/common/style.dart';
+@@ -281,7 +282,7 @@ class _PgcReviewChildPageState extends State<PgcReviewChildPage>
+               ),
+               const SizedBox(height: 5),
+               if (item.title != null)
+-                Text(
++                KoText(
+                   item.title!,
+                   style: const TextStyle(
+                     height: 1.75,
+@@ -290,7 +291,7 @@ class _PgcReviewChildPageState extends State<PgcReviewChildPage>
+                   ),
+                 ),
+               if (isLongReview)
+-                Text(
++                KoText(
+                   item.content!,
+                   style: const TextStyle(height: 1.75),
+                 )
+diff --git a/lib/pages/search_panel/all/widgets/activity.dart b/lib/pages/search_panel/all/widgets/activity.dart
+index fb404a5..ba5970a 100644
+--- a/lib/pages/search_panel/all/widgets/activity.dart
++++ b/lib/pages/search_panel/all/widgets/activity.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+@@ -51,7 +52,7 @@ class SearchActivityItem extends StatelessWidget {
+                       children: [
+                         Text(item.title!),
+                         if (item.desc != null)
+-                          Text(
++                          KoText(
+                             item.desc!,
+                             style: TextStyle(
+                               fontSize: 12,
+diff --git a/lib/pages/search_panel/all/widgets/user.dart b/lib/pages/search_panel/all/widgets/user.dart
+index ad2e8fa..0a5f996 100644
+--- a/lib/pages/search_panel/all/widgets/user.dart
++++ b/lib/pages/search_panel/all/widgets/user.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'dart:io' show Platform;
+ 
+ import 'package:PiliPlus/common/style.dart';
+@@ -216,7 +217,7 @@ Widget _buildVideoItem(
+             ),
+             const SizedBox(height: 6),
+             Expanded(
+-              child: Text(
++              child: KoText(
+                 video.title,
+                 maxLines: 2,
+                 overflow: .ellipsis,
+diff --git a/lib/pages/search_panel/user/widgets/item.dart b/lib/pages/search_panel/user/widgets/item.dart
+index 16e3127..67086eb 100644
+--- a/lib/pages/search_panel/user/widgets/item.dart
++++ b/lib/pages/search_panel/user/widgets/item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/widgets/pendant_avatar.dart';
+ import 'package:PiliPlus/models/search/result.dart';
+ import 'package:PiliPlus/utils/bili_utils.dart';
+@@ -63,7 +64,7 @@ class SearchUserItem extends StatelessWidget {
+                   style: style,
+                 ),
+                 if (item.officialVerify?.desc?.isNotEmpty == true)
+-                  Text(
++                  KoText(
+                     item.officialVerify!.desc!,
+                     style: style,
+                   ),
 diff --git a/lib/pages/setting/models/dm_settings.dart b/lib/pages/setting/models/dm_settings.dart
 index f59e090..7fa7136 100644
 --- a/lib/pages/setting/models/dm_settings.dart
@@ -174,7 +1065,7 @@ index f59e090..7fa7136 100644
      title: '弹幕开关',
      subtitle: '是否展示弹幕',
 diff --git a/lib/pages/setting/view.dart b/lib/pages/setting/view.dart
-index 33db078..7f69f7e 100644
+index 33db078..1989d33 100644
 --- a/lib/pages/setting/view.dart
 +++ b/lib/pages/setting/view.dart
 @@ -66,7 +66,7 @@ class _SettingPageState extends State<SettingPage> {
@@ -182,7 +1073,428 @@ index 33db078..7f69f7e 100644
      _SettingsModel(
        type: .dmSetting,
 -      subtitle: '点击弹幕、弹幕行高、彩色弹幕、合并弹幕',
-+      subtitle: '한국어 번역 설정 · 点击弹幕、弹幕行高、彩色弹幕、合并弹幕',
++      subtitle: '한국어 번역 설정 · 탄막 누르기, 줄 높이, 컬러 탄막, 탄막 합치기',
        icon: Icon(CustomIcons.dm_settings),
      ),
      _SettingsModel(
+diff --git a/lib/pages/subscription/widgets/item.dart b/lib/pages/subscription/widgets/item.dart
+index fc05701..ac03c4d 100644
+--- a/lib/pages/subscription/widgets/item.dart
++++ b/lib/pages/subscription/widgets/item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+@@ -86,7 +87,7 @@ class SubItem extends StatelessWidget {
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+               Expanded(
+-                child: Text(
++                child: KoText(
+                   item.title!,
+                   maxLines: 2,
+                   overflow: TextOverflow.ellipsis,
+diff --git a/lib/pages/subscription_detail/view.dart b/lib/pages/subscription_detail/view.dart
+index f29c93d..0042f1c 100644
+--- a/lib/pages/subscription_detail/view.dart
++++ b/lib/pages/subscription_detail/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/widgets/flutter/refresh_indicator.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+ import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
+@@ -139,7 +140,7 @@ class _SubDetailPageState extends State<SubDetailPage> with GridMixin {
+       title: Column(
+         crossAxisAlignment: CrossAxisAlignment.start,
+         children: [
+-          Text(
++          KoText(
+             info.title!,
+             maxLines: 1,
+             overflow: TextOverflow.ellipsis,
+@@ -176,7 +177,7 @@ class _SubDetailPageState extends State<SubDetailPage> with GridMixin {
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+                     Expanded(
+-                      child: Text(
++                      child: KoText(
+                         info.title!,
+                         maxLines: 2,
+                         overflow: TextOverflow.ellipsis,
+diff --git a/lib/pages/subscription_detail/widget/sub_video_card.dart b/lib/pages/subscription_detail/widget/sub_video_card.dart
+index af4f44f..d26faed 100644
+--- a/lib/pages/subscription_detail/widget/sub_video_card.dart
++++ b/lib/pages/subscription_detail/widget/sub_video_card.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/image/image_save.dart';
+@@ -99,7 +100,7 @@ class SubVideoCardH extends StatelessWidget {
+         crossAxisAlignment: CrossAxisAlignment.start,
+         children: [
+           Expanded(
+-            child: Text(
++            child: KoText(
+               videoItem.title!,
+               textAlign: TextAlign.start,
+               style: const TextStyle(
+diff --git a/lib/pages/video/ai_conclusion/view.dart b/lib/pages/video/ai_conclusion/view.dart
+index a44770c..8c263be 100644
+--- a/lib/pages/video/ai_conclusion/view.dart
++++ b/lib/pages/video/ai_conclusion/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/widgets/gesture/tap_gesture_recognizer.dart';
+ import 'package:PiliPlus/models_new/video/video_ai_conclusion/model_result.dart';
+ import 'package:PiliPlus/pages/common/slide/common_slide_page.dart';
+@@ -36,7 +37,7 @@ class AiConclusionPanel extends CommonSlidePage {
+             SliverToBoxAdapter(
+               child: Padding(
+                 padding: const EdgeInsets.symmetric(horizontal: 14),
+-                child: Text(
++                child: KoText(
+                   res.summary!,
+                   style: const TextStyle(fontSize: 15, height: 1.5),
+                 ),
+@@ -68,7 +69,7 @@ class AiConclusionPanel extends CommonSlidePage {
+                     crossAxisAlignment: CrossAxisAlignment.start,
+                     children: [
+                       if (index != 0) const SizedBox(height: 10),
+-                      Text(
++                      KoText(
+                         item.title!,
+                         style: const TextStyle(
+                           fontSize: 14,
+diff --git a/lib/pages/video/introduction/local/view.dart b/lib/pages/video/introduction/local/view.dart
+index 76433c2..517f8ee 100644
+--- a/lib/pages/video/introduction/local/view.dart
++++ b/lib/pages/video/introduction/local/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'dart:io';
+ 
+ import 'package:PiliPlus/common/style.dart';
+@@ -124,7 +125,7 @@ class _LocalIntroPanelState extends State<LocalIntroPanel>
+                           spacing: 5,
+                           crossAxisAlignment: CrossAxisAlignment.start,
+                           children: [
+-                            Text(
++                            KoText(
+                               entry.title,
+                               textAlign: TextAlign.start,
+                               style: TextStyle(
+diff --git a/lib/pages/video/introduction/pgc/view.dart b/lib/pages/video/introduction/pgc/view.dart
+index a4002b8..5f0ec2b 100644
+--- a/lib/pages/video/introduction/pgc/view.dart
++++ b/lib/pages/video/introduction/pgc/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'dart:math';
+ 
+ import 'package:PiliPlus/common/style.dart';
+@@ -258,7 +259,7 @@ class _PgcIntroPageState extends State<PgcIntroPage> {
+         spacing: 20,
+         children: [
+           Expanded(
+-            child: Text(
++            child: KoText(
+               item.title!,
+               style: const TextStyle(fontSize: 16),
+               maxLines: 1,
+@@ -269,7 +270,7 @@ class _PgcIntroPageState extends State<PgcIntroPage> {
+         ],
+       );
+       List<Widget> desc() => [
+-        Text(
++        KoText(
+           item.newEp!.desc!,
+           style: TextStyle(fontSize: 12, color: colorScheme.outline),
+         ),
+@@ -378,13 +379,13 @@ class _PgcIntroPageState extends State<PgcIntroPage> {
+           ),
+           const SizedBox(height: 6),
+         ],
+-        Text(
++        KoText(
+           item.title!,
+           style: const TextStyle(fontSize: 16),
+         ),
+         if (item.subtitle?.isNotEmpty == true) ...[
+           const SizedBox(height: 5),
+-          Text(
++          KoText(
+             item.subtitle!,
+             style: TextStyle(
+               fontSize: 13,
+diff --git a/lib/pages/video/introduction/pgc/widgets/intro_detail.dart b/lib/pages/video/introduction/pgc/widgets/intro_detail.dart
+index 6c9878c..9439cdf 100644
+--- a/lib/pages/video/introduction/pgc/widgets/intro_detail.dart
++++ b/lib/pages/video/introduction/pgc/widgets/intro_detail.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/widgets/keep_alive_wrapper.dart';
+ import 'package:PiliPlus/common/widgets/scroll_physics.dart'
+     show tabBarScrollPhysics;
+@@ -157,7 +158,7 @@ class _IntroDetailState extends State<PgcIntroPanel>
+               widget.item.publish!.pubTimeShow!,
+               style: smallTitle,
+             ),
+-            Text(
++            KoText(
+               widget.item.newEp!.desc!,
+               style: smallTitle,
+             ),
+diff --git a/lib/pages/video/introduction/ugc/view.dart b/lib/pages/video/introduction/ugc/view.dart
+index cb0b3df..12c93dd 100644
+--- a/lib/pages/video/introduction/ugc/view.dart
++++ b/lib/pages/video/introduction/ugc/view.dart
+@@ -1,3 +1,5 @@
++import 'package:PiliPlus/ko/ko_translate.dart';
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/assets.dart';
+ import 'package:PiliPlus/common/constants.dart';
+ import 'package:PiliPlus/common/style.dart';
+@@ -285,9 +287,20 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
+     ),
+     if (videoDetail.descV2 case final descV2? when descV2.isNotEmpty) ...[
+       const SizedBox(height: 8),
+-      SelectionText.rich(
+-        buildDesc(descV2),
+-        style: const TextStyle(height: 1.4),
++      // 한국어 번역: 소개글 번역이 오면 다시 그림
++      ValueListenableBuilder<int>(
++        valueListenable: KoTr.updates,
++        builder: (_, _, _) {
++          if (KoTr.textOn) {
++            for (final d in descV2) {
++              if (d.type == 1 && d.rawText != null) KoTr.want(d.rawText!);
++            }
++          }
++          return SelectionText.rich(
++            buildDesc(descV2),
++            style: const TextStyle(height: 1.4),
++          );
++        },
+       ),
+     ],
+     NoTranslucentArea(
+@@ -405,7 +418,7 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
+             ),
+             const TextSpan(text: ' '),
+           ],
+-          TextSpan(text: videoDetail.title),
++          TextSpan(text: KoTr.textOn ? KoTr.show(videoDetail.title ?? '') : videoDetail.title),
+         ],
+       );
+       if (isSelectable) {
+@@ -422,6 +435,16 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
+       );
+     }
+ 
++    // 한국어 번역: 제목 번역이 오면 다시 그림
++    if (KoTr.textOn && KoTr.needs(videoDetail.title ?? '')) {
++      KoTr.want(videoDetail.title!);
++      return ValueListenableBuilder<int>(
++        valueListenable: KoTr.updates,
++        builder: (_, _, _) => videoDetailCtr.plPlayerController.enableSponsorBlock
++            ? Obx(child)
++            : child(),
++      );
++    }
+     if (videoDetailCtr.plPlayerController.enableSponsorBlock) {
+       return Obx(child);
+     }
+@@ -568,7 +591,7 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
+       switch (currentDesc.type) {
+         case 1:
+           final List<InlineSpan> spanChildren = <InlineSpan>[];
+-          currentDesc.rawText?.splitMapJoin(
++          (KoTr.textOn ? KoTr.show(currentDesc.rawText ?? '') : currentDesc.rawText)?.splitMapJoin(
+             urlRegExp,
+             onMatch: (Match match) {
+               final matchStr = match[0]!;
+@@ -876,7 +899,7 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
+                       : null,
+                 ),
+               ),
+-              Text(
++              KoText(
+                 item.title!,
+                 style: TextStyle(fontSize: 12, color: colorScheme.outline),
+               ),
+diff --git a/lib/pages/video/medialist/view.dart b/lib/pages/video/medialist/view.dart
+index cb92f34..e6a0342 100644
+--- a/lib/pages/video/medialist/view.dart
++++ b/lib/pages/video/medialist/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/widgets/badge.dart';
+ import 'package:PiliPlus/common/widgets/button/icon_button.dart';
+ import 'package:PiliPlus/common/widgets/dialog/dialog.dart';
+@@ -228,7 +229,7 @@ class _MediaListPanelState extends State<MediaListPanel>
+                         child: Column(
+                           crossAxisAlignment: CrossAxisAlignment.start,
+                           children: [
+-                            Text(
++                            KoText(
+                               item.title!,
+                               maxLines: 2,
+                               overflow: TextOverflow.ellipsis,
+@@ -242,7 +243,7 @@ class _MediaListPanelState extends State<MediaListPanel>
+                             if (item.type == 24 &&
+                                 item.intro?.isNotEmpty == true) ...[
+                               const SizedBox(height: 3),
+-                              Text(
++                              KoText(
+                                 item.intro!,
+                                 maxLines: 2,
+                                 overflow: TextOverflow.ellipsis,
+diff --git a/lib/pages/video/note/view.dart b/lib/pages/video/note/view.dart
+index 0effb36..e2c594b 100644
+--- a/lib/pages/video/note/view.dart
++++ b/lib/pages/video/note/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/skeleton/video_reply.dart';
+ import 'package:PiliPlus/common/sliver_single_child_delegate.dart';
+ import 'package:PiliPlus/common/widgets/flutter/refresh_indicator.dart';
+@@ -271,7 +272,7 @@ class _NoteListPageState extends State<NoteListPage>
+                       ),
+                     if (item.summary != null) ...[
+                       const SizedBox(height: 5),
+-                      Text(
++                      KoText(
+                         item.summary!,
+                         style: TextStyle(
+                           height: 1.75,
+diff --git a/lib/pages/video/reply/vote/reply_vote_item.dart b/lib/pages/video/reply/vote/reply_vote_item.dart
+index 3deb156..8ab0b35 100644
+--- a/lib/pages/video/reply/vote/reply_vote_item.dart
++++ b/lib/pages/video/reply/vote/reply_vote_item.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/grpc/bilibili/main/community/reply/v1.pb.dart'
+     show VoteCard;
+ import 'package:PiliPlus/pages/dynamics/widgets/vote.dart';
+@@ -32,7 +33,7 @@ Widget buildVoteCard(
+             child: Column(
+               crossAxisAlignment: .start,
+               children: [
+-                Text(voteCard.title, maxLines: 1, overflow: .ellipsis),
++                KoText(voteCard.title, maxLines: 1, overflow: .ellipsis),
+                 Text(
+                   '${NumUtils.numFormat(voteCard.count.toInt())}人参与',
+                   maxLines: 1,
+diff --git a/lib/pages/video/reply/widgets/reply_item_grpc.dart b/lib/pages/video/reply/widgets/reply_item_grpc.dart
+index e6ccd65..a43c131 100644
+--- a/lib/pages/video/reply/widgets/reply_item_grpc.dart
++++ b/lib/pages/video/reply/widgets/reply_item_grpc.dart
+@@ -1,3 +1,5 @@
++import 'package:PiliPlus/ko/ko_translate.dart';
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'dart:math';
+ 
+ import 'package:PiliPlus/common/assets.dart';
+@@ -334,6 +336,14 @@ class ReplyItemGrpc extends StatelessWidget {
+             padding: padding,
+             child: _buildVoteOption(colorScheme, replyControl.voteOption),
+           ),
++        // 한국어 번역: 댓글을 번역문으로 보여주고, '원문 보기'로 원래 글(이모티콘·링크 포함)
++        KoBuilder(
++          text: replyItem.content.message,
++          enabled: KoTr.replyOn && !replyControl.showTranslation,
++          builder: (context, ko) => Column(
++            mainAxisSize: .min,
++            crossAxisAlignment: .start,
++            children: [
+         Padding(
+           padding: padding,
+           child: TextMore.rich(
+@@ -359,7 +369,9 @@ class ReplyItemGrpc extends StatelessWidget {
+                 _buildMessage(
+                   context,
+                   colorScheme,
+-                  replyControl.showTranslation
++                  ko != null && !KoTr.showOrig.contains(replyItem.id)
++                      ? _koContent(replyItem.content, ko)
++                      : replyControl.showTranslation
+                       ? replyItem.translatedContent
+                       : replyItem.content,
+                   replyControl,
+@@ -368,6 +380,29 @@ class ReplyItemGrpc extends StatelessWidget {
+             ),
+           ),
+         ),
++        if (ko != null)
++          Padding(
++            padding: padding,
++            child: GestureDetector(
++              behavior: HitTestBehavior.opaque,
++              onTap: () {
++                if (!KoTr.showOrig.remove(replyItem.id)) {
++                  KoTr.showOrig.add(replyItem.id);
++                }
++                (context as Element).markNeedsBuild();
++              },
++              child: Padding(
++                padding: const EdgeInsets.only(top: 2, bottom: 4),
++                child: Text(
++                  KoTr.showOrig.contains(replyItem.id) ? '번역 보기' : '원문 보기',
++                  style: TextStyle(fontSize: 12, color: colorScheme.primary),
++                ),
++              ),
++            ),
++          ),
++            ],
++          ),
++        ),
+         if (replyItem.content.pictures.isNotEmpty) ...[
+           Padding(
+             padding: padding,
+@@ -656,7 +691,7 @@ class ReplyItemGrpc extends StatelessWidget {
+                           _buildMessage(
+                             context,
+                             colorScheme,
+-                            childReply.content,
++                            _koMaybe(childReply.content),
+                             childReply.replyControl,
+                           ),
+                         ],
+@@ -705,6 +740,17 @@ class ReplyItemGrpc extends StatelessWidget {
+     );
+   }
+ 
++  // 한국어 번역: 원래 댓글 정보(이모티콘·@·링크)는 그대로 두고 글만 번역문으로
++  static Content _koContent(Content c, String ko) =>
++      Content.fromBuffer(c.writeToBuffer())..message = ko;
++
++  // 답글 미리보기: 번역이 이미 있으면 번역문, 없으면 번역을 요청하고 원문
++  static Content _koMaybe(Content c) {
++    if (!KoTr.replyOn) return c;
++    KoTr.want(c.message);
++    return KoTr.isTranslated(c.message) ? _koContent(c, KoTr.show(c.message)) : c;
++  }
++
+   InlineSpan _buildMessage(
+     BuildContext context,
+     ColorScheme colorScheme,
+diff --git a/lib/pages/video/view_point/view.dart b/lib/pages/video/view_point/view.dart
+index dcc46c5..146f108 100644
+--- a/lib/pages/video/view_point/view.dart
++++ b/lib/pages/video/view_point/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_widgets.dart';
+ import 'package:PiliPlus/common/style.dart';
+ import 'package:PiliPlus/common/widgets/button/icon_button.dart';
+ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+@@ -143,7 +144,7 @@ class _ViewPointsPageState extends State<ViewPointsPage>
+                   mainAxisSize: MainAxisSize.min,
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+-                    Text(
++                    KoText(
+                       segment.title ?? '',
+                       maxLines: 2,
+                       overflow: TextOverflow.ellipsis,

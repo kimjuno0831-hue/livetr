@@ -9,7 +9,7 @@ import 'package:material_ui/material_ui.dart';
 List<SettingsModel> get koSettings => [
   const SwitchModel(
     title: '한국어 번역',
-    subtitle: '탄막·자막·라이브 탄막을 한국어로 바꿔서 보여줘요',
+    subtitle: '영상 제목·댓글·탄막·자막을 한국어로 바꿔서 보여줘요',
     leading: Icon(Icons.translate),
     setKey: KoTr.kEnable,
     defaultVal: true,
@@ -47,6 +47,20 @@ List<SettingsModel> get koSettings => [
       key: KoTr.kModel,
       hint: KoTr.defaultModel,
     ),
+  ),
+  const SwitchModel(
+    title: '제목·소개·게시글 번역',
+    subtitle: '영상 제목, 소개, 게시글 등을 한국어로',
+    leading: Icon(Icons.title),
+    setKey: KoTr.kText,
+    defaultVal: true,
+  ),
+  const SwitchModel(
+    title: '댓글 번역',
+    subtitle: "댓글마다 '원문 보기'로 원래 글을 볼 수 있어요",
+    leading: Icon(Icons.comment_outlined),
+    setKey: KoTr.kReply,
+    defaultVal: true,
   ),
   const SwitchModel(
     title: '탄막 번역',

@@ -34,6 +34,8 @@ jobs:
           set -eux
           git apply ko/ko.patch
           cp -r ko/lib/ko lib/ko
+          # 메뉴·설정 등 고정 문구를 미리 번역해둔 한국어로 바꾸기
+          python3 ko/tool/ui_strings.py apply lib ko/ui_ko.json
           # 원본 PiliPlus와 같이 설치되도록 이름 바꾸기 (패키지는 .dev 접미사)
           sed -i 's/value = "PiliPlus dev"/value = "PiliPlus 한국어"/' android/app/build.gradle.kts
           # 같은 열쇠로 서명 → 다음 버전부터 덮어 설치 가능

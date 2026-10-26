@@ -9,6 +9,7 @@ import 'dart:convert';
 
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show ValueNotifier;
 
 abstract final class KoTr {
   // ── 설정 키 ──
@@ -22,6 +23,8 @@ abstract final class KoTr {
   static const kKey = 'koTrGeminiKey';
   static const kModel = 'koTrGeminiModel';
   static const kGlossary = 'koTrGlossary';
+  static const kText = 'koTrText'; // 제목·소개·게시글
+  static const kReply = 'koTrReply'; // 댓글
   static const defaultModel = 'gemini-3.5-flash-lite';
 
   static T _get<T>(String k, T def) {
@@ -38,6 +41,8 @@ abstract final class KoTr {
   static bool get subOn => enabled && _get(kSub, true);
   static bool get subShowOrig => _get(kSubOrig, true);
   static bool get liveOn => enabled && _get(kLive, true);
+  static bool get textOn => enabled && _get(kText, true);
+  static bool get replyOn => enabled && _get(kReply, true);
   static String get engine => _get(kEngine, 'google');
   static String get geminiKey => (_get(kKey, '') as String).trim();
   static String get geminiModel {
@@ -66,15 +71,45 @@ abstract final class KoTr {
   static final Set<String> _pending = HashSet();
   static const _cacheMax = 30000;
 
+  static Timer? _notifyTimer;
+
   static void _put(String src, String ko) {
     _cache.remove(src);
     _cache[src] = ko;
     if (_cache.length > _cacheMax) {
       _cache.remove(_cache.keys.first);
     }
+    _notifyTimer ??= Timer(const Duration(milliseconds: 100), () {
+      _notifyTimer = null;
+      updates.value++;
+    });
   }
 
-  static void clearCache() => _cache.clear();
+  static void clearCache() {
+    _cache.clear();
+    updates.value++;
+  }
+
+  // 번역이 새로 들어올 때마다 1씩 올라감 → 화면의 글자들이 다시 그려짐
+  static final ValueNotifier<int> updates = ValueNotifier(0);
+
+  // 댓글별 '원문 보기' 상태 (댓글 id)
+  static final Set<Object> showOrig = HashSet();
+
+  // ── 화면 글자(제목·댓글 등): 0.15초 모아서 한 번에 번역 ──
+  static final List<String> _wantBuf = [];
+  static Timer? _wantTimer;
+
+  static void want(String s) {
+    if (!needs(s) || _cache.containsKey(s) || _pending.contains(s)) return;
+    _wantBuf.add(s);
+    _wantTimer ??= Timer(const Duration(milliseconds: 150), () {
+      _wantTimer = null;
+      final xs = List.of(_wantBuf);
+      _wantBuf.clear();
+      translateAll(xs, chunk: useGemini ? 30 : 40);
+    });
+  }
 
   static bool isTranslated(String s) => _cache.containsKey(s);
 
@@ -88,7 +123,7 @@ abstract final class KoTr {
 
   static bool needs(String s) {
     final t = s.trim();
-    if (t.isEmpty || t.length > 200) return false;
+    if (t.isEmpty || t.length > 1500) return false;
     if (_cjk.hasMatch(t)) return true;
     return useGemini && _meme.hasMatch(t);
   }
@@ -205,8 +240,31 @@ abstract final class KoTr {
 
   // 여러 줄을 한 번에 보내고 줄 단위로 나눠 받음. 줄 수가 안 맞으면 잘게 나눠 다시 시도.
   static Future<List<String?>> _googleSafe(List<String> xs) async {
+    // 여러 줄짜리(소개·댓글)는 줄 구분이 섞이지 않게 하나씩, 한 줄짜리는 묶어서
+    final out = List<String?>.filled(xs.length, null);
+    final singles = <int>[];
     final gl = glossary;
-    final src = xs.map((e) => _applyGlossary(e.replaceAll('\n', ' '), gl)).toList();
+    for (var i = 0; i < xs.length; i++) {
+      if (xs[i].contains('\n')) {
+        try {
+          out[i] = await _google(_applyGlossary(xs[i], gl));
+        } catch (_) {}
+      } else {
+        singles.add(i);
+      }
+    }
+    if (singles.isNotEmpty) {
+      final r = await _googleLines(singles.map((i) => xs[i]).toList());
+      for (var k = 0; k < singles.length; k++) {
+        out[singles[k]] = k < r.length ? r[k] : null;
+      }
+    }
+    return out;
+  }
+
+  static Future<List<String?>> _googleLines(List<String> xs) async {
+    final gl = glossary;
+    final src = xs.map((e) => _applyGlossary(e, gl)).toList();
     try {
       final out = await _google(src.join('\n'));
       final lines = out.split('\n');
@@ -220,8 +278,8 @@ abstract final class KoTr {
       }
     }
     final mid = xs.length ~/ 2;
-    final a = await _googleSafe(xs.sublist(0, mid));
-    final b = await _googleSafe(xs.sublist(mid));
+    final a = await _googleLines(xs.sublist(0, mid));
+    final b = await _googleLines(xs.sublist(mid));
     return [...a, ...b];
   }
 
@@ -254,7 +312,7 @@ abstract final class KoTr {
       ..write('너는 중국 동영상 사이트 빌리빌리의 탄막(화면에 흘러가는 짧은 댓글)과 자막을 한국어로 번역한다. ')
       ..write('한국 인터넷 커뮤니티 말투로 짧고 자연스럽게. 밈·은어·말장난은 직역하지 말고 한국 사람이 뜻을 바로 알 수 있게 풀어서 번역하라 ')
       ..write('(예: 2333→ㅋㅋㅋ, 前方高能→곧 대박 장면, awsl→귀여워 죽겠다, yyds→갓, 泪目→눈물 난다). ')
-      ..write('[doge] 같은 대괄호 이모티콘은 그대로 둬라. 입력 배열과 같은 길이·같은 순서의 JSON 문자열 배열로만 답하라.');
+      ..write('영상 제목·댓글·게시글도 들어온다. [doge] 같은 대괄호 이모티콘, @닉네임, 링크, BV번호는 그대로 둬라. 줄바꿈은 유지하라. 입력 배열과 같은 길이·같은 순서의 JSON 문자열 배열로만 답하라.');
     if (used.isNotEmpty) {
       system.write('\n\n[용어집 - 반드시 이렇게 번역]\n');
       for (final e in used) {
