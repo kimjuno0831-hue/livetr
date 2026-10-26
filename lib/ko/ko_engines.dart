@@ -167,6 +167,7 @@ class KoSlotState {
   int formatFails = 0;
   String? lastError;
   DateTime? lastErrorAt;
+  int? avgMs; // 평균 응답 시간
 }
 
 class KoAiError implements Exception {
@@ -316,38 +317,59 @@ abstract final class KoEngines {
         const steps = [1, 5, 30, 120, 360];
         final m = steps[(st.strikes - 1) < steps.length ? st.strikes - 1 : steps.length - 1];
         final daily = body.toLowerCase().contains('per day') || body.toLowerCase().contains('perday');
-        _rest(s, Duration(minutes: daily ? (m < 60 ? 60 : m) : m), '사용 한도 초과 (429)${daily ? ' · 하루 한도' : ''}');
+        _rest(s, Duration(minutes: daily ? (m < 60 ? 60 : m) : m), '사용 한도 초과 (429)${daily ? ' · 하루 한도' : ''}${_serverMsg(e)}');
         return;
       }
       if (code == 401 || code == 403) {
-        _rest(s, const Duration(hours: 6), '키가 잘못됐거나 권한 없음 ($code)');
+        _rest(s, const Duration(hours: 6), '키가 잘못됐거나 권한 없음 ($code)${_serverMsg(e)}');
         return;
       }
       if (code == 404) {
-        _rest(s, const Duration(hours: 6), '모델 이름을 찾을 수 없음 (404)');
+        _rest(s, const Duration(hours: 6), '모델 이름을 찾을 수 없음 (404)${_serverMsg(e)}');
         return;
       }
       if (code == 400) {
-        _rest(s, const Duration(minutes: 10), '요청 오류 (400) ${_short(body)}');
+        _rest(s, const Duration(minutes: 10), '요청 오류 (400)${_serverMsg(e)}');
+        return;
+      }
+      if (code == 413) {
+        _rest(s, const Duration(minutes: 1), '한 번에 보낸 양이 너무 많음 (413)${_serverMsg(e)}');
         return;
       }
       if (code != null) {
-        _rest(s, const Duration(minutes: 1), '서버 오류 ($code)');
+        _rest(s, const Duration(minutes: 1), '서버 오류 ($code)${_serverMsg(e)}');
         return;
       }
       _rest(s, const Duration(seconds: 30), '연결 실패');
       return;
     }
-    // 답 형식이 이상한 경우: 3번 연달아면 5분 쉼
+    // 답 형식이 이상한 경우: 한 번이면 30초, 두 번 연달아면 5분 쉼 (계속 시간 낭비 안 하게)
     st.formatFails++;
-    st.lastError = '답 형식 오류: ${_short(e.toString())}';
-    st.lastErrorAt = DateTime.now();
-    if (st.formatFails >= 3) {
-      _rest(s, const Duration(minutes: 5), st.lastError!);
-    }
+    final why = '답 형식 오류: ${_short(e.toString())}';
+    final n = st.formatFails;
+    _rest(s, Duration(seconds: n >= 2 ? 300 : 30), why);
+    st.formatFails = n;
   }
 
   static String _short(String s) => s.length > 80 ? s.substring(0, 80) : s;
+
+  // 서버가 보낸 오류 이유 (JSON 의 error.message 등)
+  static String _serverMsg(DioException e) {
+    final d = e.response?.data;
+    try {
+      final j = d is String ? jsonDecode(d) : d;
+      if (j is Map) {
+        final err = j['error'];
+        final m = err is Map ? err['message'] : (j['message'] ?? err);
+        if (m != null) return ' — ${_short(m.toString())}';
+      }
+      if (j is List && j.isNotEmpty && j.first is Map) {
+        final m = ((j.first as Map)['error'] as Map?)?['message'];
+        if (m != null) return ' — ${_short(m.toString())}';
+      }
+    } catch (_) {}
+    return d == null ? '' : ' — ${_short(d.toString())}';
+  }
 
   static String? get lastError {
     KoSlotState? best;
@@ -370,9 +392,13 @@ abstract final class KoEngines {
     if (ready.isEmpty) throw KoAiError('모든 AI 번역기가 쉬는 중');
     Object? last;
     for (final s in ready) {
+      final sw = Stopwatch()..start();
       try {
         final r = await run(s);
         _ok(s);
+        final st = stateOf(s.key);
+        final ms = sw.elapsedMilliseconds;
+        st.avgMs = st.avgMs == null ? ms : (st.avgMs! * 0.7 + ms * 0.3).round();
         return (r, s);
       } catch (e) {
         last = e;
@@ -383,6 +409,7 @@ abstract final class KoEngines {
   }
 
   static final Set<String> _noThinking = {};
+  static final Set<String> _noReasoningParam = {};
 
   // 한 칸에게 묻기 (system + user → 답 글자)
   static Future<String> ask(
@@ -466,23 +493,42 @@ abstract final class KoEngines {
     String user,
     double temperature,
   ) async {
-    final res = await _dio.post<String>(
-      s.engine.chatUrl,
-      data: jsonEncode({
-        'model': s.model,
-        'messages': [
-          {'role': 'system', 'content': system},
-          {'role': 'user', 'content': user},
-        ],
-        'temperature': temperature,
-        'stream': false,
-      }),
-      options: Options(
-        contentType: 'application/json',
-        responseType: ResponseType.plain,
-        headers: {'Authorization': 'Bearer ${s.engine.key.trim()}'},
-      ),
-    );
+    // 답 길이 상한: 보낸 글 길이에 맞게 (안 정하면 Groq 등은 모델 최대치로 계산해서 한도 초과가 남)
+    final est = (system.length ~/ 4) + user.length * 2 + 256;
+    final maxTokens = est < 512 ? 512 : (est > 6000 ? 6000 : est);
+    final url = s.engine.chatUrl;
+    final m = s.model.toLowerCase();
+    // Groq 의 Qwen 은 '생각하기'를 끔 (빠르고 토큰 절약)
+    final noThink = url.contains('groq.com') && m.contains('qwen') && !_noReasoningParam.contains(s.key);
+    Response<String> res;
+    try {
+      res = await _dio.post<String>(
+        url,
+        data: jsonEncode({
+          'model': s.model,
+          'messages': [
+            {'role': 'system', 'content': system},
+            {'role': 'user', 'content': user},
+          ],
+          'temperature': temperature,
+          'max_tokens': maxTokens,
+          'stream': false,
+          if (noThink) 'reasoning_effort': 'none',
+        }),
+        options: Options(
+          contentType: 'application/json',
+          responseType: ResponseType.plain,
+          headers: {'Authorization': 'Bearer ${s.engine.key.trim()}'},
+        ),
+      );
+    } on DioException catch (e) {
+      final body = e.response?.data?.toString().toLowerCase() ?? '';
+      if (noThink && e.response?.statusCode == 400 && body.contains('reasoning')) {
+        _noReasoningParam.add(s.key);
+        return _openai(s, system, user, temperature);
+      }
+      rethrow;
+    }
     final j = jsonDecode(res.data!) as Map<String, dynamic>;
     final msg = ((j['choices'] as List).first as Map)['message'] as Map;
     final c = msg['content'];
@@ -498,8 +544,45 @@ abstract final class KoEngines {
     return text.trim();
   }
 
+  // 번역에 못 쓰는 모델(음성·이미지·유료 전용·종료된 것) 거르기
+  static final _geminiSkip = RegExp(
+    r'(live|tts|transcribe|image|banana|embed|aqa|imagen|veo|-pro|argon|omni|robotics|computer-use|audio|learnlm|thinking-exp|^gemini-1\.|^gemini-2\.)',
+    caseSensitive: false,
+  );
+  static final _openaiSkip = RegExp(
+    r'(whisper|tts|guard|embed|playai|orpheus|moderation|rerank|compound|transcri|speech|image|flux|stable-diffusion)',
+    caseSensitive: false,
+  );
+
+  static bool usableModel(KoEngine e, String m) =>
+      e.type == 'gemini' ? !_geminiSkip.hasMatch(m) : !_openaiSkip.hasMatch(m);
+
+  // 모델 옆에 붙일 설명 (무료 여부·대략 한도)
+  static String? modelNote(KoEngine e, String m) {
+    final x = m.toLowerCase();
+    if (e.type == 'gemini') {
+      if (x.contains('gemma')) {
+        return x.contains('e2b') || x.contains('e4b') || (x.contains('1b') && !x.contains('31b'))
+            ? '무료 · 작은 모델(품질 낮음)'
+            : '무료';
+      }
+      if (x.contains('flash-lite')) return '무료 · 하루 약 500회';
+      if (x.contains('flash')) return '무료 · 하루 약 20회 (적음)';
+      return null;
+    }
+    if (e.chatUrl.contains('openrouter.ai')) {
+      return x.endsWith(':free') ? '무료 · 하루 50회' : '유료';
+    }
+    return null;
+  }
+
   // 설정 화면: 모델 목록 불러오기
   static Future<List<String>> fetchModels(KoEngine e) async {
+    final all = await _fetchModelsRaw(e);
+    return all.where((m) => usableModel(e, m)).toList();
+  }
+
+  static Future<List<String>> _fetchModelsRaw(KoEngine e) async {
     if (e.type == 'gemini') {
       final res = await _dio.get<String>(
         'https://generativelanguage.googleapis.com/v1beta/models',

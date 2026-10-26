@@ -56,7 +56,7 @@ class _KoEnginesPageState extends State<KoEnginesPage> {
       final s = KoSlot(e, m);
       final st = KoEngines.stateOf(s.key);
       final n = KoEngines.todayCount(s);
-      var line = '$m · 오늘 $n번';
+      var line = '$m · 오늘 $n번${st.avgMs != null ? ' · 평균 ${(st.avgMs! / 1000).toStringAsFixed(1)}초' : ''}';
       if (KoEngines.resting(s)) {
         final left = st.restUntil!.difference(DateTime.now());
         final mins = left.inMinutes;
@@ -96,7 +96,7 @@ class _KoEnginesPageState extends State<KoEnginesPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: Text(
-                '위에서부터 순서대로 써요. 한도에 걸리면 잠깐 쉬게 하고 다음 것으로 넘어가고, 다 막히면 구글 번역으로 해요.\n'
+                '위에서부터 순서대로 써요. 한도에 걸리면 잠깐 쉬게 하고 다음 것으로 넘어가고, 다 막히면 구글 번역으로 해요. 평균 응답 시간이 짧은 걸 앞에 두면 더 빨라요.\n'
                 '번역기 하나에 모델을 쉼표로 여러 개 적으면 모델마다 따로 돌려써요 (제미나이 키 하나로 여러 모델).',
                 style: TextStyle(fontSize: 13, color: cs.outline),
               ),
@@ -306,8 +306,10 @@ class _KoEngineEditPageState extends State<KoEngineEditPage> {
                       itemCount: shown.length,
                       itemBuilder: (context, i) {
                         final m = shown[i];
+                        final note = KoEngines.modelNote(d, m);
                         return CheckboxListTile(
                           dense: true,
+                          subtitle: note == null ? null : Text(note),
                           value: chosen.contains(m),
                           onChanged: (v) => setDlg(() {
                             if (v == true) {

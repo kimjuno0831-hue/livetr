@@ -353,6 +353,13 @@ abstract final class KoTr {
 
   // 용어집·고친 번역이 바뀌어서 다시 번역이 끝났을 때 → 켜져 있는 자막을 새로 만듦
   static final ValueNotifier<int> subRefresh = ValueNotifier(0);
+  static Timer? _subTimer;
+
+  // 자막 AI 다듬기가 여러 번에 나눠 끝나도 자막은 한 번만 새로 만들게 2초 모았다가
+  static void _subRefreshSoon() {
+    _subTimer?.cancel();
+    _subTimer = Timer(const Duration(seconds: 2), () => subRefresh.value++);
+  }
 
   // 댓글·제목별 '원문 보기' 상태 (댓글 id 또는 제목 글자)
   static final Set<Object> showOrig = HashSet();
@@ -374,7 +381,7 @@ abstract final class KoTr {
 
   static String? get lastAiError => KoEngines.lastError;
 
-  // ── 화면 글자(제목·댓글 등): 0.8초 모아서 한 번에 번역 (요청 수 줄이기) ──
+  // ── 화면 글자(제목·댓글 등): 0.3초 모아서 한 번에 번역 ──
   static final Map<String, List<String>> _wantBuf = {};
   static final Map<String, Timer> _wantTimer = {};
 
@@ -386,7 +393,7 @@ abstract final class KoTr {
       return;
     }
     (_wantBuf[kind] ??= []).add(s);
-    _wantTimer[kind] ??= Timer(const Duration(milliseconds: 800), () {
+    _wantTimer[kind] ??= Timer(const Duration(milliseconds: 300), () {
       _wantTimer.remove(kind);
       final xs = List.of(_wantBuf[kind] ?? const <String>[]);
       _wantBuf[kind]?.clear();
@@ -427,21 +434,38 @@ abstract final class KoTr {
     ),
   );
 
-  static int _running = 0;
-  static final Queue<(String, List<String>)> _jobs = Queue();
-  static final List<Completer<void>> _idleWaiters = [];
+  // ── 번역 줄 (서로 막지 않게 따로 세움) ──
+  // 'ui': 화면에 보이는 제목·댓글·검색 (가장 먼저)
+  // 'bg': 탄막·자막
+  // 'refine': 구글로 먼저 보여준 걸 AI 번역으로 다듬기
+  static final Map<String, Queue<_KoJob>> _lanes = {
+    'ui': Queue(),
+    'bg': Queue(),
+    'refine': Queue(),
+  };
+  static final Map<String, int> _running = {'ui': 0, 'bg': 0, 'refine': 0};
+  static const Map<String, int> _maxRun = {'ui': 3, 'bg': 3, 'refine': 3};
 
-  // 한 번에 보낼 줄 수: AI 는 크게 묶어서 요청 수를 줄임
-  static int _chunkFor(String kind) {
-    if (!aiFor(kind)) return 80;
+  static String _laneOf(String kind) =>
+      (kind == 'dm' || kind == 'sub') ? 'bg' : 'ui';
+
+  // 한 번에 보낼 줄 수: 탄막·자막은 크게(요청 수 절약), 댓글·제목은 작게(빨리 보이게)
+  static int _chunkFor(String kind, bool ai) {
+    if (!ai) return 80;
     return switch (kind) {
       'dm' => 200,
       'sub' => 120,
-      _ => 60,
+      'reply' => 15,
+      _ => 20,
     };
   }
 
+  // 먼저 구글로 보여주고 AI 번역이 오면 바꾸기
+  static const kRefine = 'koTrAiRefine';
+  static bool get refineOn => _get(kRefine, true);
+
   // texts 를 순서대로(앞쪽이 먼저) 번역해서 캐시에 넣음. 이미 된 것/진행 중인 것은 건너뜀.
+  // 돌려주는 Future 는 '일단 보여줄 번역'(구글 먼저면 구글)이 다 들어오면 끝남.
   static Future<void> translateAll(
     List<String> texts, {
     int chunk = 0,
@@ -465,45 +489,110 @@ abstract final class KoTr {
     }
     if (todo.isEmpty) return Future.value();
     _pending.addAll(todo);
-    final size = chunk > 0 && !aiFor(kind) ? chunk : _chunkFor(kind);
+    final ai = aiFor(kind);
+    // 탄막은 양이 많아서 '구글 먼저'를 안 씀 (AI 를 쓰면 바로 AI 로)
+    final refine = ai && refineOn && kind != 'dm';
+    final lane = _laneOf(kind);
+    final size = refine
+        ? 80
+        : (chunk > 0 && !ai ? chunk : _chunkFor(kind, ai));
+    final jobs = <_KoJob>[];
     for (var i = 0; i < todo.length; i += size) {
-      _jobs.add((
-        kind,
-        todo.sublist(i, i + size > todo.length ? todo.length : i + size),
-      ));
+      jobs.add(
+        _KoJob(
+          kind,
+          todo.sublist(i, i + size > todo.length ? todo.length : i + size),
+          refine ? 'google' : (ai ? 'ai' : 'google'),
+          refine,
+        ),
+      );
     }
-    final c = Completer<void>();
-    _idleWaiters.add(c);
+    // 새로 들어온 요청을 줄 맨 앞에 (지금 화면·지금 장면이 먼저)
+    final q = _lanes[lane]!;
+    for (final j in jobs.reversed) {
+      q.addFirst(j);
+    }
+    final done = Future.wait(jobs.map((j) => j.first.future));
     _pump();
-    return c.future;
+    return done;
   }
 
   static void _pump() {
-    while (_running < 3 && _jobs.isNotEmpty) {
-      final (kind, job) = _jobs.removeFirst();
-      _running++;
-      _batch(job, kind)
-          .then((res) {
-            final (out, viaG, by) = res;
-            for (var i = 0; i < job.length; i++) {
-              final r = i < out.length ? out[i] : null;
-              if (r != null && r.trim().isNotEmpty) {
-                _put(job[i], r.trim(), viaGoogle: viaG, by: by);
-              }
-            }
-          })
-          .catchError((_) {})
-          .whenComplete(() {
-            _pending.removeAll(job);
-            _running--;
-            if (_running == 0 && _jobs.isEmpty) {
-              for (final w in _idleWaiters) {
-                if (!w.isCompleted) w.complete();
-              }
-              _idleWaiters.clear();
-            }
-            _pump();
-          });
+    for (final lane in _lanes.keys) {
+      final q = _lanes[lane]!;
+      while (_running[lane]! < _maxRun[lane]! && q.isNotEmpty) {
+        final job = q.removeFirst();
+        _running[lane] = _running[lane]! + 1;
+        _runJob(job).whenComplete(() {
+          _running[lane] = _running[lane]! - 1;
+          _pump();
+        });
+      }
+    }
+  }
+
+  static Future<void> _runJob(_KoJob job) async {
+    var handedOff = false;
+    try {
+      final (out, viaG, by) = await _batch(
+        job.texts,
+        job.kind,
+        mode: job.mode,
+        googleFallback: !job.refining,
+      );
+      if (job.refining && viaG) {
+        // AI 가 다 막힘 → 이미 보여준 구글 번역을 그대로 둠
+        for (final t in job.texts) {
+          _viaGoogle.add(t);
+          _by[t] = '구글 번역 (AI가 막혀서)';
+        }
+        return;
+      }
+      for (var i = 0; i < job.texts.length; i++) {
+        final r = i < out.length ? out[i] : null;
+        if (r != null && r.trim().isNotEmpty) {
+          _put(
+            job.texts[i],
+            r.trim(),
+            viaGoogle: viaG,
+            by: job.refineAfter ? '구글 번역 (AI 번역 기다리는 중)' : by,
+          );
+        }
+      }
+      if (job.refineAfter) {
+        // 구글로 먼저 보여줬으니 AI 로 다듬기 (작게 나눠서, 별도 줄에서)
+        final size = _chunkFor(job.kind, true);
+        final parts = <_KoJob>[];
+        for (var i = 0; i < job.texts.length; i += size) {
+          parts.add(
+            _KoJob(
+              job.kind,
+              job.texts.sublist(
+                i,
+                i + size > job.texts.length ? job.texts.length : i + size,
+              ),
+              'ai',
+              false,
+              refining: true,
+            ),
+          );
+        }
+        final q = _lanes['refine']!;
+        for (final p in parts.reversed) {
+          q.addFirst(p);
+        }
+        handedOff = true;
+        job.first.complete();
+        _pump();
+        Future.wait(parts.map((p) => p.first.future)).whenComplete(() {
+          _pending.removeAll(job.texts);
+          if (job.kind == 'sub') _subRefreshSoon();
+        });
+      }
+    } catch (_) {
+    } finally {
+      if (!job.first.isCompleted) job.first.complete();
+      if (!handedOff) _pending.removeAll(job.texts);
     }
   }
 
@@ -553,13 +642,19 @@ abstract final class KoTr {
   // ── 엔진 ── 결과: (번역들, AI 대신 구글로 번역했는지, 번역한 곳)
   static Future<(List<String?>, bool, String)> _batch(
     List<String> xs,
-    String kind,
-  ) async {
-    if (aiFor(kind)) {
+    String kind, {
+    String? mode,
+    bool googleFallback = true,
+  }) async {
+    final useAi = mode == null ? aiFor(kind) : (mode == 'ai' && hasAi);
+    if (useAi) {
       try {
         final (r, slot) = await KoEngines.rotate((s) => _aiTranslate(s, xs));
         return (r, false, slot.label);
       } catch (_) {
+        if (!googleFallback) {
+          return (List<String?>.filled(xs.length, null), true, '');
+        }
         // AI 번역기가 다 막힘(한도 초과 등) → 구글로
         return (await _googleSafe(xs), true, '구글 번역 (AI 대신)');
       }
@@ -653,20 +748,30 @@ abstract final class KoTr {
     // 여러 줄짜리(소개·댓글)는 줄 구분이 섞이지 않게 하나씩, 한 줄짜리는 묶어서
     final out = List<String?>.filled(xs.length, null);
     final singles = <int>[];
+    final multis = <int>[];
     final gl = glossary;
     for (var i = 0; i < xs.length; i++) {
-      if (xs[i].contains('\n')) {
-        out[i] = await _googleOne(xs[i], gl);
-      } else {
-        singles.add(i);
-      }
+      (xs[i].contains('\n') ? multis : singles).add(i);
     }
-    if (singles.isNotEmpty) {
+    // 한 줄짜리 묶음과 여러 줄짜리(6개씩 동시에)를 함께 진행
+    Future<void> runSingles() async {
+      if (singles.isEmpty) return;
       final r = await _googleLines(singles.map((i) => xs[i]).toList(), gl);
       for (var k = 0; k < singles.length; k++) {
         out[singles[k]] = k < r.length ? r[k] : null;
       }
     }
+
+    Future<void> runMultis() async {
+      for (var k = 0; k < multis.length; k += 6) {
+        final part = multis.sublist(k, k + 6 > multis.length ? multis.length : k + 6);
+        await Future.wait(
+          part.map((i) async => out[i] = await _googleOne(xs[i], gl)),
+        );
+      }
+    }
+
+    await Future.wait([runSingles(), runMultis()]);
     return out;
   }
 
@@ -829,4 +934,20 @@ abstract final class KoTr {
     }
     return sb.toString();
   }
+}
+
+class _KoJob {
+  _KoJob(
+    this.kind,
+    this.texts,
+    this.mode,
+    this.refineAfter, {
+    this.refining = false,
+  });
+  final String kind;
+  final List<String> texts;
+  final String mode; // 'google' | 'ai'
+  final bool refineAfter; // 구글로 끝낸 뒤 AI 로 다듬기를 이어서
+  final bool refining; // 다듬기 작업 (실패해도 구글 번역이 이미 있음)
+  final Completer<void> first = Completer<void>();
 }

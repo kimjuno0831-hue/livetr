@@ -54,6 +54,13 @@ List<SettingsModel> get koSettings => [
     onTap: _pickAiKinds,
   ),
   const SwitchModel(
+    title: '먼저 구글, 나중에 AI로 다듬기',
+    subtitle: '댓글·제목·자막을 구글 번역으로 바로 보여주고, AI 번역이 오면 바꿔요 (탄막 제외)',
+    leading: Icon(Icons.bolt_outlined),
+    setKey: KoTr.kRefine,
+    defaultVal: true,
+  ),
+  const SwitchModel(
     title: '제목·소개·게시글 번역',
     subtitle: '영상 제목, 소개, 게시글 등을 한국어로',
     leading: Icon(Icons.title),
