@@ -1,3 +1,4 @@
+import 'package:PiliPlus/ko/ko_quick.dart';
 // 한국어 번역 설정 항목 (설정 → 弹幕设置 맨 위)
 import 'package:PiliPlus/ko/ko_engines.dart';
 import 'package:PiliPlus/ko/ko_engines_page.dart';
@@ -16,6 +17,16 @@ List<SettingsModel> get koSettings => [
     leading: Icon(Icons.translate),
     setKey: KoTr.kEnable,
     defaultVal: true,
+  ),
+  NormalModel(
+    title: '번역 말투 · 빠른 설정',
+    getSubtitle: () =>
+        '지금: ${KoTr.styleNames[KoTr.style]} · 플레이어 위쪽과 댓글 목록 위의 文A 버튼으로도 열 수 있어요',
+    leading: const Icon(Icons.record_voice_over_outlined),
+    onTap: (context, setState) async {
+      await KoQuick.show(context);
+      setState();
+    },
   ),
   NormalModel(
     title: 'AI 번역기',

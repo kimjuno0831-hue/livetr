@@ -54,6 +54,8 @@ class _KoTextState extends State<KoText> {
 
   void _onUpdate() {
     if (!mounted) return;
+    // 말투를 바꾸면 그 말투의 번역이 없을 수 있음 → 다시 요청
+    if (_on && !KoTr.isTranslated(widget.data)) KoTr.want(widget.data);
     if (KoTr.show(widget.data) != _shown || KoTr.origVersion != _ver) {
       setState(() {});
     }
@@ -138,6 +140,9 @@ class _KoBuilderState extends State<KoBuilder> {
 
   void _onUpdate() {
     if (!mounted) return;
+    if (widget.enabled && !KoTr.isTranslated(widget.text)) {
+      KoTr.want(widget.text, kind: widget.kind);
+    }
     final now = KoTr.isTranslated(widget.text) ? KoTr.show(widget.text) : null;
     if (now != _shown || KoTr.origVersion != _ver) setState(() {});
   }

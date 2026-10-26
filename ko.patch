@@ -218,7 +218,7 @@ index 575203d..ba6c390 100644
  
    Future<void> viewLater() async {
 diff --git a/lib/pages/danmaku/controller.dart b/lib/pages/danmaku/controller.dart
-index 456870d..d15b478 100644
+index 456870d..a7c0ad7 100644
 --- a/lib/pages/danmaku/controller.dart
 +++ b/lib/pages/danmaku/controller.dart
 @@ -4,6 +4,7 @@ import 'dart:io' show File;
@@ -229,17 +229,19 @@ index 456870d..d15b478 100644
  import 'package:PiliPlus/plugin/pl_player/controller.dart';
  import 'package:PiliPlus/plugin/pl_player/models/data_source.dart';
  import 'package:PiliPlus/utils/accounts.dart';
-@@ -26,6 +27,9 @@ class PlDanmakuController {
+@@ -26,6 +27,11 @@ class PlDanmakuController {
  
    late final _isLogin = Accounts.main.isLogin;
  
 +  // 한국어 번역: 지금 재생 위치 (이 근처 탄막부터 먼저 번역)
 +  int _lastProgress = 0;
++  // 번역 말투를 바꾸면 받아둔 탄막을 그 말투로 다시 번역
++  int _koStyle = KoTr.style;
 +
    final Map<int, List<DanmakuElem>> _dmSegMap = HashMap();
    // 已请求的段落标记
    late final Set<int> _requestedSeg = HashSet();
-@@ -88,13 +92,34 @@ class PlDanmakuController {
+@@ -88,13 +94,38 @@ class PlDanmakuController {
        final int pos = element.progress ~/ 100; //每0.1秒存储一次
        (_dmSegMap[pos] ??= []).add(element);
      }
@@ -261,6 +263,10 @@ index 456870d..d15b478 100644
  
    List<DanmakuElem>? getCurrentDanmaku(int progress) {
 +    _lastProgress = progress;
++    if (KoTr.dmOn && KoTr.style != _koStyle) {
++      _koStyle = KoTr.style;
++      _koTranslate(_dmSegMap.values.expand((e) => e).toList());
++    }
      if (_isFileSource) {
        initFileDmIfNeeded();
      } else {
@@ -275,7 +281,7 @@ index 456870d..d15b478 100644
          queryDanmaku(segmentIndex);
          return null;
 diff --git a/lib/pages/danmaku/view.dart b/lib/pages/danmaku/view.dart
-index aa9d44a..0213ebc 100644
+index aa9d44a..172dc5e 100644
 --- a/lib/pages/danmaku/view.dart
 +++ b/lib/pages/danmaku/view.dart
 @@ -1,6 +1,7 @@
@@ -286,7 +292,7 @@ index aa9d44a..0213ebc 100644
  import 'package:PiliPlus/pages/danmaku/controller.dart';
  import 'package:PiliPlus/pages/danmaku/danmaku_model.dart';
  import 'package:PiliPlus/plugin/pl_player/controller.dart';
-@@ -116,8 +117,11 @@ class _PlDanmakuState extends State<PlDanmaku> {
+@@ -116,8 +117,15 @@ class _PlDanmakuState extends State<PlDanmaku> {
      if (currentDanmakuList != null) {
        final blockColorful = DanmakuOptions.blockColorful;
        final danmakuWeight = DanmakuOptions.danmakuWeight;
@@ -294,11 +300,15 @@ index aa9d44a..0213ebc 100644
 +      final koHide = koOn && KoTr.dmHideUntranslated;
        for (DanmakuElem e in currentDanmakuList) {
          if (e.weight < danmakuWeight) continue;
-+        if (koHide && e.mode != 7 && KoTr.needs(e.content) && !KoTr.isTranslated(e.content)) continue;
++        if (koOn && e.mode != 7 && KoTr.needs(e.content) && !KoTr.isTranslated(e.content)) {
++          // 아직 번역이 없으면(구글이 막혔었거나 말투를 바꿈) 다시 요청
++          KoTr.want(e.content, kind: 'dm');
++          if (koHide) continue;
++        }
          if (e.mode == 7) {
            try {
              _controller!.addDanmaku(
-@@ -136,7 +140,7 @@ class _PlDanmakuState extends State<PlDanmaku> {
+@@ -136,7 +144,7 @@ class _PlDanmakuState extends State<PlDanmaku> {
          } else {
            _controller!.addDanmaku(
              DanmakuContentItem(
@@ -1075,22 +1085,25 @@ index 9904ed7..5c04883 100644
  
      if (await PiliScheme.routePushFromUrl(text, selfHandle: true)) {
 diff --git a/lib/pages/search/view.dart b/lib/pages/search/view.dart
-index 47767aa..8c1af96 100644
+index 47767aa..5ccb9aa 100644
 --- a/lib/pages/search/view.dart
 +++ b/lib/pages/search/view.dart
-@@ -1,3 +1,6 @@
+@@ -1,3 +1,7 @@
++import 'package:PiliPlus/ko/ko_quick.dart';
 +import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 +import 'package:PiliPlus/ko/ko_widgets.dart';
 +import 'package:PiliPlus/ko/ko_translate.dart';
  import 'dart:convert';
  
  import 'package:PiliPlus/common/widgets/dialog/export_import.dart';
-@@ -104,6 +107,20 @@ class _SearchPageState extends State<SearchPage> {
+@@ -104,6 +108,23 @@ class _SearchPageState extends State<SearchPage> {
                )
              : const SizedBox.shrink(),
        ),
-+      // 한국어 번역: 검색 화면 번역 켜기/끄기
-+      IconButton(
++      // 한국어 번역: 검색 화면 번역 켜기/끄기 (길게 누르면 번역 빠른 설정)
++      GestureDetector(
++        onLongPress: () => KoQuick.show(context),
++        child: IconButton(
 +        tooltip: KoTr.searchOn ? '검색 화면 번역 끄기' : '검색 화면 번역 켜기',
 +        icon: Icon(
 +          Icons.translate,
@@ -1099,14 +1112,15 @@ index 47767aa..8c1af96 100644
 +        ),
 +        onPressed: () {
 +          GStorage.setting.put(KoTr.kSearch, !KoTr.searchOn);
-+          SmartDialog.showToast(KoTr.searchOn ? '검색 화면 번역 켬' : '검색 화면 번역 끔');
++          SmartDialog.showToast(KoTr.searchOn ? '검색 화면 번역 켬 (길게 누르면 번역 설정)' : '검색 화면 번역 끔');
 +          setState(() {});
 +        },
++      ),
 +      ),
        IconButton(
          tooltip: '清空',
          icon: const Icon(Icons.clear, size: 22),
-@@ -116,7 +133,9 @@ class _SearchPageState extends State<SearchPage> {
+@@ -116,7 +137,9 @@ class _SearchPageState extends State<SearchPage> {
        ),
        const SizedBox(width: 10),
      ],
@@ -1117,7 +1131,7 @@ index 47767aa..8c1af96 100644
        autofocus: true,
        focusNode: _searchController.searchFocusNode,
        controller: _searchController.controller,
-@@ -124,13 +143,21 @@ class _SearchPageState extends State<SearchPage> {
+@@ -124,13 +147,21 @@ class _SearchPageState extends State<SearchPage> {
        onChanged: _searchController.onChange,
        decoration: InputDecoration(
          visualDensity: .standard,
@@ -1140,7 +1154,7 @@ index 47767aa..8c1af96 100644
    Widget _buildSearchSuggest() {
      return Obx(() {
        final list = _searchController.searchSuggestList;
-@@ -148,9 +175,12 @@ class _SearchPageState extends State<SearchPage> {
+@@ -148,9 +179,12 @@ class _SearchPageState extends State<SearchPage> {
                        ),
                        child: Padding(
                          padding: const .only(left: 20, top: 9, bottom: 9),
@@ -1155,7 +1169,7 @@ index 47767aa..8c1af96 100644
                                  .map(
                                    (e) => TextSpan(
                                      text: e.text,
-@@ -164,7 +194,7 @@ class _SearchPageState extends State<SearchPage> {
+@@ -164,7 +198,7 @@ class _SearchPageState extends State<SearchPage> {
                                  )
                                  .toList(),
                            ),
@@ -1383,6 +1397,19 @@ index f59e090..7fa7136 100644
    const SwitchModel(
      title: '弹幕开关',
      subtitle: '是否展示弹幕',
+diff --git a/lib/pages/setting/models/play_settings.dart b/lib/pages/setting/models/play_settings.dart
+index ae0d6cf..fe6542a 100644
+--- a/lib/pages/setting/models/play_settings.dart
++++ b/lib/pages/setting/models/play_settings.dart
+@@ -73,7 +73,7 @@ List<SettingsModel> get playSettings => [
+     subtitle: '进入详情页自动播放',
+     leading: Icon(Icons.motion_photos_auto_outlined),
+     setKey: SettingBoxKey.autoPlayEnable,
+-    defaultVal: false,
++    defaultVal: true,
+   ),
+   const SwitchModel(
+     title: '全屏显示锁定按钮',
 diff --git a/lib/pages/setting/view.dart b/lib/pages/setting/view.dart
 index 33db078..1989d33 100644
 --- a/lib/pages/setting/view.dart
@@ -1771,6 +1798,51 @@ index 0effb36..e2c594b 100644
                          item.summary!,
                          style: TextStyle(
                            height: 1.75,
+diff --git a/lib/pages/video/reply/view.dart b/lib/pages/video/reply/view.dart
+index 3325732..45fad13 100644
+--- a/lib/pages/video/reply/view.dart
++++ b/lib/pages/video/reply/view.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_quick.dart';
+ import 'package:PiliPlus/common/skeleton/video_reply.dart';
+ import 'package:PiliPlus/common/sliver_single_child_delegate.dart';
+ import 'package:PiliPlus/common/style.dart';
+@@ -93,6 +94,26 @@ class _VideoReplyPanelState extends State<VideoReplyPanel>
+                           sortType.desc,
+                           style: const TextStyle(fontSize: 13),
+                         ),
++                        Row(
++                          mainAxisSize: .min,
++                          children: [
++                        // 한국어 번역: 번역 빠른 설정
++                        TextButton.icon(
++                          style: Style.buttonStyle,
++                          onPressed: () => KoQuick.show(context),
++                          icon: Icon(
++                            Icons.translate,
++                            size: 16,
++                            color: colorScheme.secondary,
++                          ),
++                          label: Text(
++                            '번역',
++                            style: TextStyle(
++                              fontSize: 13,
++                              color: colorScheme.secondary,
++                            ),
++                          ),
++                        ),
+                         TextButton.icon(
+                           style: Style.buttonStyle,
+                           onPressed: _videoReplyController.queryBySort,
+@@ -109,6 +130,8 @@ class _VideoReplyPanelState extends State<VideoReplyPanel>
+                             ),
+                           ),
+                         ),
++                          ],
++                        ),
+                       ],
+                     );
+                   }),
 diff --git a/lib/pages/video/reply/vote/reply_vote_item.dart b/lib/pages/video/reply/vote/reply_vote_item.dart
 index 3deb156..8ab0b35 100644
 --- a/lib/pages/video/reply/vote/reply_vote_item.dart
@@ -1933,16 +2005,17 @@ index dcc46c5..146f108 100644
                        maxLines: 2,
                        overflow: TextOverflow.ellipsis,
 diff --git a/lib/pages/video/widgets/header_control.dart b/lib/pages/video/widgets/header_control.dart
-index 588334a..b5fede4 100644
+index 588334a..6a08022 100644
 --- a/lib/pages/video/widgets/header_control.dart
 +++ b/lib/pages/video/widgets/header_control.dart
-@@ -1,3 +1,5 @@
+@@ -1,3 +1,6 @@
++import 'package:PiliPlus/ko/ko_quick.dart';
 +import 'package:PiliPlus/ko/ko_fix.dart';
 +import 'package:PiliPlus/ko/ko_translate.dart';
  import 'dart:async' show Timer;
  import 'dart:convert' show jsonDecode, utf8;
  import 'dart:io' show Platform, File;
-@@ -702,6 +704,17 @@ class HeaderControlState extends State<HeaderControl>
+@@ -702,6 +705,17 @@ class HeaderControlState extends State<HeaderControl>
                    leading: const Icon(Icons.subtitles_outlined, size: 20),
                    title: const Text('字幕设置', style: titleStyle),
                  ),
@@ -1960,7 +2033,7 @@ index 588334a..b5fede4 100644
                  ListTile(
                    dense: true,
                    onTap: () async {
-@@ -1154,6 +1167,42 @@ class HeaderControlState extends State<HeaderControl>
+@@ -1154,6 +1168,42 @@ class HeaderControlState extends State<HeaderControl>
      );
    }
  
@@ -2003,6 +2076,28 @@ index 588334a..b5fede4 100644
    void onExportSubtitle() {
      showDialog(
        context: context,
+@@ -1911,6 +1961,21 @@ class HeaderControlState extends State<HeaderControl>
+                     ),
+                   ),
+                 ],
++                // 한국어 번역: 번역 빠른 설정
++                SizedBox(
++                  width: btnWidth,
++                  height: btnHeight,
++                  child: IconButton(
++                    tooltip: '번역 빠른 설정',
++                    style: btnStyle,
++                    onPressed: () => KoQuick.show(context),
++                    icon: const Icon(
++                      size: 19,
++                      Icons.translate,
++                      color: Colors.white,
++                    ),
++                  ),
++                ),
+                 SizedBox(
+                   width: btnWidth,
+                   height: btnHeight,
 diff --git a/lib/plugin/pl_player/view/view.dart b/lib/plugin/pl_player/view/view.dart
 index e44e288..65db8a1 100644
 --- a/lib/plugin/pl_player/view/view.dart
@@ -2056,3 +2151,16 @@ index e44e288..65db8a1 100644
                _dmActionItem(
                  const Icon(
                    size: 20,
+diff --git a/lib/utils/storage_pref.dart b/lib/utils/storage_pref.dart
+index a9569ef..4b7659b 100644
+--- a/lib/utils/storage_pref.dart
++++ b/lib/utils/storage_pref.dart
+@@ -674,7 +674,7 @@ abstract final class Pref {
+       _setting.get(SettingBoxKey.enableAutoExit, defaultValue: true);
+ 
+   static bool get autoPlayEnable =>
+-      _setting.get(SettingBoxKey.autoPlayEnable, defaultValue: false);
++      _setting.get(SettingBoxKey.autoPlayEnable, defaultValue: true);
+ 
+   static bool get pipNoDanmaku =>
+       _setting.get(SettingBoxKey.pipNoDanmaku, defaultValue: false);
