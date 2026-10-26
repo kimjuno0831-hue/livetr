@@ -1,0 +1,77 @@
+name: Build PiliPlus KO
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [pili-ko]
+
+permissions:
+  contents: write
+
+env:
+  # 원본 PiliPlus의 이 커밋 위에 한국어 번역 패치를 얹어서 빌드
+  UPSTREAM_SHA: affac5334fc41744894618d9fb53b7101db9532a
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: 1 Get PiliPlus source
+        uses: actions/checkout@v4
+        with:
+          repository: bggRGjQaUbCoE/PiliPlus
+          ref: ${{ env.UPSTREAM_SHA }}
+          fetch-depth: 0
+
+      - name: 2 Get Korean patch
+        uses: actions/checkout@v4
+        with:
+          path: ko
+
+      - name: 3 Apply Korean translation patch
+        run: |
+          set -eux
+          git apply ko/ko.patch
+          cp -r ko/lib/ko lib/ko
+          # 원본 PiliPlus와 같이 설치되도록 이름 바꾸기 (패키지는 .dev 접미사)
+          sed -i 's/value = "PiliPlus dev"/value = "PiliPlus 한국어"/' android/app/build.gradle.kts
+          # 같은 열쇠로 서명 → 다음 버전부터 덮어 설치 가능
+          cp ko/sign.keystore android/app/key.jks
+          printf "storeFile=key.jks\nstorePassword=livetr123\nkeyAlias=livetr\nkeyPassword=livetr123\n" > android/key.properties
+          git status --short | head -20
+
+      - name: 4 Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "17"
+
+      - name: 5 Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      - name: 6 Upstream patches (same as official build)
+        shell: pwsh
+        run: lib/scripts/patch.ps1 android
+
+      - name: 7 Version info
+        shell: pwsh
+        run: lib/scripts/build.ps1 android
+
+      - name: 8 Build APK
+        run: flutter build apk --release --target-platform android-arm64 --dart-define-from-file=pili_release.json --no-pub --android-project-arg dev=1
+
+      - name: 9 Publish APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eux
+          cp build/app/outputs/flutter-apk/app-release.apk PiliPlus-ko.apk
+          ls -lh PiliPlus-ko.apk
+          gh release delete pili-latest --yes --cleanup-tag || true
+          gh release create pili-latest PiliPlus-ko.apk --target main --title "PiliPlus 한국어" --notes "PiliPlus ${{ env.UPSTREAM_SHA }} + 한국어 번역 (build ${{ github.run_number }})" --prerelease

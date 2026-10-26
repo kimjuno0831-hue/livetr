@@ -1,0 +1,188 @@
+diff --git a/lib/http/video.dart b/lib/http/video.dart
+index 0817215..f500dff 100644
+--- a/lib/http/video.dart
++++ b/lib/http/video.dart
+@@ -37,6 +37,7 @@ import 'package:PiliPlus/utils/request_utils.dart';
+ import 'package:PiliPlus/utils/storage.dart';
+ import 'package:PiliPlus/utils/storage_pref.dart';
+ import 'package:PiliPlus/utils/subtitle_utils.dart';
++import 'package:PiliPlus/ko/ko_translate.dart';
+ import 'package:PiliPlus/utils/utils.dart';
+ import 'package:PiliPlus/utils/wbi_sign.dart';
+ import 'package:dio/dio.dart';
+@@ -906,6 +907,21 @@ abstract final class VideoHttp {
+   }) async {
+     final res = await Request().get("https:$subtitleUrl");
+     if (res.data?['body'] case List list) {
++      // 한국어 번역: 자막 전체를 번역해서 바꿔 넣음 (원문 같이 보기 설정이면 두 줄로)
++      if (KoTr.subOn) {
++        try {
++          final texts = list.map((e) => (e['content'] ?? '').toString().trim()).toList();
++          await KoTr.translateAll(texts, chunk: 40)
++              .timeout(const Duration(seconds: 40));
++          final orig = KoTr.subShowOrig;
++          for (final e in list) {
++            final c = (e['content'] ?? '').toString().trim();
++            if (KoTr.isTranslated(c)) {
++              e['content'] = orig ? '${KoTr.show(c)}\n$c' : KoTr.show(c);
++            }
++          }
++        } catch (_) {}
++      }
+       switch (format) {
+         case .json:
+           throw UnimplementedError();
+diff --git a/lib/pages/danmaku/controller.dart b/lib/pages/danmaku/controller.dart
+index 456870d..d15b478 100644
+--- a/lib/pages/danmaku/controller.dart
++++ b/lib/pages/danmaku/controller.dart
+@@ -4,6 +4,7 @@ import 'dart:io' show File;
+ import 'package:PiliPlus/grpc/bilibili/community/service/dm/v1.pb.dart';
+ import 'package:PiliPlus/grpc/dm.dart';
+ import 'package:PiliPlus/http/loading_state.dart';
++import 'package:PiliPlus/ko/ko_translate.dart';
+ import 'package:PiliPlus/plugin/pl_player/controller.dart';
+ import 'package:PiliPlus/plugin/pl_player/models/data_source.dart';
+ import 'package:PiliPlus/utils/accounts.dart';
+@@ -26,6 +27,9 @@ class PlDanmakuController {
+ 
+   late final _isLogin = Accounts.main.isLogin;
+ 
++  // 한국어 번역: 지금 재생 위치 (이 근처 탄막부터 먼저 번역)
++  int _lastProgress = 0;
++
+   final Map<int, List<DanmakuElem>> _dmSegMap = HashMap();
+   // 已请求的段落标记
+   late final Set<int> _requestedSeg = HashSet();
+@@ -88,13 +92,34 @@ class PlDanmakuController {
+       final int pos = element.progress ~/ 100; //每0.1秒存储一次
+       (_dmSegMap[pos] ??= []).add(element);
+     }
++    _koTranslate(elems);
++  }
++
++  // 받은 탄막을 한국어로 미리 번역 (지금 재생 위치 이후 → 이전 순서로)
++  void _koTranslate(List<DanmakuElem> elems) {
++    if (!KoTr.dmOn) return;
++    final now = _lastProgress;
++    final sorted = elems.where((e) => e.mode != 7).toList()
++      ..sort((a, b) {
++        int key(DanmakuElem e) =>
++            e.progress >= now ? e.progress - now : (1 << 30) + (now - e.progress);
++        return key(a).compareTo(key(b));
++      });
++    KoTr.translateAll(sorted.map((e) => e.content).toList());
+   }
+ 
+   List<DanmakuElem>? getCurrentDanmaku(int progress) {
++    _lastProgress = progress;
+     if (_isFileSource) {
+       initFileDmIfNeeded();
+     } else {
+       final int segmentIndex = DmUtils.calcSegment(progress);
++      // 한국어 번역: 다음 6분 묶음을 1분 전에 미리 받아서 번역해둠
++      if (KoTr.dmOn &&
++          progress % DmUtils.segLength > DmUtils.segLength - 60000 &&
++          _requestedSeg.contains(segmentIndex)) {
++        queryDanmaku(segmentIndex + 1);
++      }
+       if (!_requestedSeg.contains(segmentIndex)) {
+         queryDanmaku(segmentIndex);
+         return null;
+diff --git a/lib/pages/danmaku/view.dart b/lib/pages/danmaku/view.dart
+index aa9d44a..0213ebc 100644
+--- a/lib/pages/danmaku/view.dart
++++ b/lib/pages/danmaku/view.dart
+@@ -1,6 +1,7 @@
+ import 'dart:convert';
+ 
+ import 'package:PiliPlus/grpc/bilibili/community/service/dm/v1.pb.dart';
++import 'package:PiliPlus/ko/ko_translate.dart';
+ import 'package:PiliPlus/pages/danmaku/controller.dart';
+ import 'package:PiliPlus/pages/danmaku/danmaku_model.dart';
+ import 'package:PiliPlus/plugin/pl_player/controller.dart';
+@@ -116,8 +117,11 @@ class _PlDanmakuState extends State<PlDanmaku> {
+     if (currentDanmakuList != null) {
+       final blockColorful = DanmakuOptions.blockColorful;
+       final danmakuWeight = DanmakuOptions.danmakuWeight;
++      final koOn = KoTr.dmOn;
++      final koHide = koOn && KoTr.dmHideUntranslated;
+       for (DanmakuElem e in currentDanmakuList) {
+         if (e.weight < danmakuWeight) continue;
++        if (koHide && e.mode != 7 && KoTr.needs(e.content) && !KoTr.isTranslated(e.content)) continue;
+         if (e.mode == 7) {
+           try {
+             _controller!.addDanmaku(
+@@ -136,7 +140,7 @@ class _PlDanmakuState extends State<PlDanmaku> {
+         } else {
+           _controller!.addDanmaku(
+             DanmakuContentItem(
+-              e.content,
++              koOn ? KoTr.show(e.content) : e.content,
+               color: blockColorful
+                   ? Colors.white
+                   : DmUtils.decimalToColor(e.color),
+diff --git a/lib/pages/live_room/controller.dart b/lib/pages/live_room/controller.dart
+index cd48e48..5f342f6 100644
+--- a/lib/pages/live_room/controller.dart
++++ b/lib/pages/live_room/controller.dart
+@@ -28,6 +28,7 @@ import 'package:PiliPlus/plugin/pl_player/models/data_source.dart';
+ import 'package:PiliPlus/plugin/pl_player/utils/danmaku_options.dart';
+ import 'package:PiliPlus/services/service_locator.dart';
+ import 'package:PiliPlus/tcp/live.dart';
++import 'package:PiliPlus/ko/ko_translate.dart';
+ import 'package:PiliPlus/utils/accounts.dart';
+ import 'package:PiliPlus/utils/android/bindings.g.dart';
+ import 'package:PiliPlus/utils/connectivity_utils.dart';
+@@ -613,7 +614,8 @@ class LiveRoomController extends GetxController {
+               name: extra['reply_uname'],
+             );
+           }
+-          addDm(
++          // 한국어 번역: 0.3초씩 모아서 번역한 뒤 보여줌
++          KoTr.live(msg).then((msg) => addDm(
+             DanmakuMsg(
+               name: name,
+               text: msg,
+@@ -637,7 +639,7 @@ class LiveRoomController extends GetxController {
+               selfSend: isLogin && uid == mid,
+               extra: liveExtra,
+             ),
+-          );
++          ));
+           break;
+         case 'SUPER_CHAT_MESSAGE' when showSuperChat:
+           final item = SuperChatItem.fromJson(obj['data'], roomId);
+diff --git a/lib/pages/setting/models/dm_settings.dart b/lib/pages/setting/models/dm_settings.dart
+index f59e090..7fa7136 100644
+--- a/lib/pages/setting/models/dm_settings.dart
++++ b/lib/pages/setting/models/dm_settings.dart
+@@ -1,6 +1,7 @@
+ import 'dart:math' show max;
+ 
+ import 'package:PiliPlus/common/widgets/custom_icon.dart';
++import 'package:PiliPlus/ko/ko_settings.dart';
+ import 'package:PiliPlus/pages/setting/models/model.dart';
+ import 'package:PiliPlus/utils/extension/num_ext.dart';
+ import 'package:PiliPlus/utils/filtering_text.dart';
+@@ -14,6 +15,7 @@ import 'package:material_design_icons_flutter/material_design_icons_flutter.dart
+ import 'package:material_ui/material_ui.dart' hide RefreshIndicator;
+ 
+ List<SettingsModel> get dmSettings => [
++  ...koSettings,
+   const SwitchModel(
+     title: '弹幕开关',
+     subtitle: '是否展示弹幕',
+diff --git a/lib/pages/setting/view.dart b/lib/pages/setting/view.dart
+index 33db078..7f69f7e 100644
+--- a/lib/pages/setting/view.dart
++++ b/lib/pages/setting/view.dart
+@@ -66,7 +66,7 @@ class _SettingPageState extends State<SettingPage> {
+     ),
+     _SettingsModel(
+       type: .dmSetting,
+-      subtitle: '点击弹幕、弹幕行高、彩色弹幕、合并弹幕',
++      subtitle: '한국어 번역 설정 · 点击弹幕、弹幕行高、彩色弹幕、合并弹幕',
+       icon: Icon(CustomIcons.dm_settings),
+     ),
+     _SettingsModel(
