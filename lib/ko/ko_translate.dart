@@ -828,13 +828,17 @@ abstract final class KoTr {
   }
 
   // ── 구글 번역 통로 ──
-  // 무료 통로라 한꺼번에 많이 보내면 구글이 잠깐 막음 → 동시에 2개, 0.15초 간격으로만 보내고
-  // 거절당하면 그 통로를 잠깐 쉬게 하고 다른 통로로. 다 막히면 AI 번역기로 대신함.
+  // 무료 통로라 한꺼번에 많이 보내면 구글이 잠깐 막음 → 동시에 2개, 0.35초 간격으로만 보냄.
+  // 요청은 브라우저와 같은 모양으로 (짧은 글은 주소에 넣어 GET, 긴 글만 POST, 크롬 브라우저 정보).
+  // 거절당하면 그 통로를 잠깐 쉬게 하고, 쉬는 시간이 끝나면 '你好' 하나로 가볍게 확인한 뒤 돌아옴.
+  // 다 막히면 AI 번역기로 대신함.
   static final List<_GEndpoint> _gEndpoints = [
-    _GEndpoint('기본', 'https://translate.googleapis.com/translate_a/single', true),
-    _GEndpoint('보조 1', 'https://translate.googleapis.com/translate_a/t', false),
-    _GEndpoint('보조 2', 'https://clients5.google.com/translate_a/t', false),
+    _GEndpoint('기본', 'https://translate.googleapis.com/translate_a/single', 'gtx'),
+    _GEndpoint('보조 1', 'https://translate.googleapis.com/translate_a/t', 'dict'),
+    _GEndpoint('보조 2', 'https://clients5.google.com/translate_a/t', 'dict'),
   ];
+  static const _ua =
+      'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
   static int _gActive = 0;
   static final Queue<Completer<void>> _gWait = Queue();
   static DateTime _gLast = DateTime(2000);
@@ -846,7 +850,7 @@ abstract final class KoTr {
       await c.future;
     }
     _gActive++;
-    final wait = 150 - DateTime.now().difference(_gLast).inMilliseconds;
+    final wait = 350 - DateTime.now().difference(_gLast).inMilliseconds;
     _gLast = DateTime.now().add(Duration(milliseconds: wait > 0 ? wait : 0));
     if (wait > 0) await Future.delayed(Duration(milliseconds: wait));
   }
@@ -856,44 +860,60 @@ abstract final class KoTr {
     if (_gWait.isNotEmpty) _gWait.removeFirst().complete();
   }
 
-  // 지금 구글로 번역할 수 있는 통로가 하나도 없는지
-  static bool get googleBlocked => _gEndpoints.every((e) => e.blocked);
+  // 지금 구글로 번역할 수 있는 통로가 하나도 없는지 (안 쓰는 통로는 빼고)
+  static bool get googleBlocked =>
+      _gEndpoints.where((e) => !e.unsupported).every((e) => e.blocked);
 
-  // 구글이 막혀서 못 한 번역 (원문 → 항목)
-  static final LinkedHashMap<String, String> _retryLater = LinkedHashMap();
-
-  static void _retryFailed() {
-    final byKind = <String, List<String>>{};
-    _retryLater.forEach((t, k) => (byKind[k] ??= []).add(t));
-    _retryLater.clear();
-    byKind.forEach((k, ts) => translateAll(ts, kind: k));
-  }
+  static String _hm(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   // 설정 화면에 보여줄 구글 상태
   static String get googleStatus {
-    if (_gEndpoints.every((e) => !e.blocked && e.strikes == 0)) return '정상';
+    if (_gEndpoints.every((e) => e.strikes == 0 && e.reason == null)) return '정상';
     return _gEndpoints.map((e) {
-      if (!e.blocked) return '${e.name}: 정상';
+      if (e.unsupported) return '${e.name}: 안 씀 (${e.reason ?? '지원 안 함'})';
+      final checked = e.lastCheck == null ? '' : ', ${_hm(e.lastCheck!)} 확인';
+      if (!e.blocked) {
+        return e.reason == null ? '${e.name}: 정상' : '${e.name}: 정상 (최근: ${e.reason}$checked)';
+      }
       final left = e.blockedUntil!.difference(DateTime.now());
       final m = left.inMinutes;
-      return '${e.name}: 막힘 (${m < 1 ? 1 : m}분 뒤 다시 시도)';
-    }).join(' · ');
+      return '${e.name}: 막힘 — ${e.reason ?? '거절'}$checked, ${m < 1 ? 1 : m}분 뒤 다시 확인';
+    }).join('\n');
   }
 
   static void resetGoogle() {
     for (final e in _gEndpoints) {
       e
         ..blockedUntil = null
-        ..strikes = 0;
+        ..strikes = 0
+        ..unsupported = false
+        ..reason = null;
     }
   }
 
-  static void _gBlock(_GEndpoint e) {
+  static void _gBlock(_GEndpoint e, String reason) {
     e.strikes++;
-    // 2분 → 5분 → 15분 → 30분 → 60분
-    const steps = [2, 5, 15, 30, 60];
+    e.reason = reason;
+    e.lastCheck = DateTime.now();
+    // 2분 → 3분 → 5분 (그 뒤로는 5분마다 가볍게 확인)
+    const steps = [2, 3, 5];
     final m = steps[e.strikes - 1 < steps.length ? e.strikes - 1 : steps.length - 1];
     e.blockedUntil = DateTime.now().add(Duration(minutes: m));
+  }
+
+  // 거절 이유 알아보기. null 이면 '막힘'이 아님 (다른 오류)
+  static String? _blockReason(Object e) {
+    if (e is _GoogleBlocked) return '로봇 확인 화면';
+    if (e is DioException) {
+      final code = e.response?.statusCode;
+      final body = (e.response?.data?.toString() ?? '').toLowerCase();
+      if (body.contains('sorry') || body.contains('unusual traffic')) return '로봇 확인 화면 ($code)';
+      if (code == 429) return '요청이 너무 많다고 거절 (429)';
+      if (code == 503) return '잠시 거절 (503)';
+      if (code == 403) return '접근 거절 (403)';
+    }
+    return null;
   }
 
   static Future<String> _google(
@@ -907,35 +927,52 @@ abstract final class KoTr {
       final encLen = Uri.encodeQueryComponent(text).length;
       Object? lastErr;
       for (final ep in _gEndpoints) {
-        if (ep.blocked) continue;
-        // 보조 통로는 주소에 글을 넣어 보내서 짧은 글만
-        if (!ep.post && encLen > 1800) continue;
-        try {
-          final r = await _callGoogle(ep, text, sl, tl);
-          final wasBlocked = ep.strikes > 0;
-          ep.strikes = 0;
-          if (wasBlocked && _retryLater.isNotEmpty) {
-            // 구글이 다시 됨 → 막혀서 못 한 번역을 다시
-            Future.microtask(_retryFailed);
+        if (ep.unsupported || ep.blocked) continue;
+        // 보조 통로는 주소에 글을 넣어서만 보내니 짧은 글만
+        if (ep.client == 'dict' && encLen > 1800) continue;
+        // 쉬다가 돌아온 통로는 '你好' 하나로 먼저 확인 (큰 요청으로 또 막히지 않게)
+        if (ep.strikes > 0) {
+          try {
+            await _callGoogle(ep, '你好', 'auto', 'ko', get: true);
+            ep
+              ..strikes = 0
+              ..lastCheck = DateTime.now();
+            if (_retryLater.isNotEmpty) Future.microtask(_retryFailed);
+          } catch (e) {
+            final why = _blockReason(e);
+            if (why != null) {
+              _gBlock(ep, why);
+              lastErr = e;
+              continue;
+            }
           }
-          return r;
-        } on DioException catch (e) {
-          final code = e.response?.statusCode;
-          final body = e.response?.data?.toString() ?? '';
-          if (code == 429 || code == 403 || code == 503 || body.contains('sorry')) {
-            _gBlock(ep);
-            lastErr = e;
-            continue;
-          }
-          lastErr = e;
-          if (code == null) rethrow; // 인터넷 문제는 다른 통로도 같음
-        } on _GoogleBlocked catch (e) {
-          // 사람 확인 화면(HTML)이 옴 → 막힌 것
-          _gBlock(ep);
-          lastErr = e;
-        } catch (e) {
-          lastErr = e;
         }
+        // 짧은 글은 브라우저처럼 GET, 긴 글은 POST. 한쪽이 거절당하면 다른 쪽으로 한 번 더.
+        final preferGet = encLen <= 1800;
+        final tries = ep.client == 'dict' ? [true] : (preferGet ? [true, false] : [false]);
+        String? why;
+        for (final get in tries) {
+          try {
+            final r = await _callGoogle(ep, text, sl, tl, get: get);
+            ep.reason = null;
+            return r;
+          } catch (e) {
+            lastErr = e;
+            why = _blockReason(e);
+            if (why == null) {
+              final code = e is DioException ? e.response?.statusCode : null;
+              if (e is DioException && code == null) rethrow; // 인터넷 문제
+              // 보조 통로가 400/404 등을 주면 그 통로는 안 씀
+              if (ep.client == 'dict' && code != null && code >= 400 && code < 500) {
+                ep
+                  ..unsupported = true
+                  ..reason = '지원 안 함 ($code)';
+              }
+              break;
+            }
+          }
+        }
+        if (why != null) _gBlock(ep, why);
       }
       if (googleBlocked) throw const _GoogleBlocked();
       throw lastErr ?? Exception('구글 번역 실패');
@@ -948,32 +985,31 @@ abstract final class KoTr {
     _GEndpoint ep,
     String text,
     String sl,
-    String tl,
-  ) async {
+    String tl, {
+    required bool get,
+  }) async {
     final Response<String> res;
-    if (ep.post) {
+    final params = ep.client == 'gtx'
+        ? {'client': 'gtx', 'sl': sl, 'tl': tl, 'dt': 't'}
+        : {'client': 'dict-chrome-ex', 'sl': sl, 'tl': tl};
+    if (get) {
+      res = await _dio.get<String>(
+        ep.url,
+        queryParameters: {...params, 'q': text},
+        options: Options(
+          responseType: ResponseType.plain,
+          headers: {'User-Agent': _ua, 'Accept': '*/*'},
+        ),
+      );
+    } else {
       res = await _dio.post<String>(
         ep.url,
-        queryParameters: {'client': 'gtx', 'sl': sl, 'tl': tl, 'dt': 't'},
+        queryParameters: params,
         data: 'q=${Uri.encodeQueryComponent(text)}',
         options: Options(
           contentType: 'application/x-www-form-urlencoded;charset=utf-8',
           responseType: ResponseType.plain,
-          headers: {'User-Agent': 'Mozilla/5.0'},
-        ),
-      );
-    } else {
-      res = await _dio.get<String>(
-        ep.url,
-        queryParameters: {
-          'client': 'dict-chrome-ex',
-          'sl': sl,
-          'tl': tl,
-          'q': text,
-        },
-        options: Options(
-          responseType: ResponseType.plain,
-          headers: {'User-Agent': 'Mozilla/5.0'},
+          headers: {'User-Agent': _ua, 'Accept': '*/*'},
         ),
       );
     }
@@ -981,7 +1017,7 @@ abstract final class KoTr {
     if (raw.startsWith('<')) throw const _GoogleBlocked();
     final j = jsonDecode(raw);
     String out = '';
-    if (ep.post) {
+    if (ep.client == 'gtx') {
       final sb = StringBuffer();
       for (final seg in ((j as List)[0] as List)) {
         if (seg is List && seg.isNotEmpty && seg[0] is String) sb.write(seg[0]);
@@ -996,7 +1032,18 @@ abstract final class KoTr {
       }
     }
     if (out.trim().isEmpty) throw Exception('empty');
+    ep.lastCheck = DateTime.now();
     return out.trimRight();
+  }
+
+  // 구글이 막혀서 못 한 번역 (원문 → 항목)
+  static final LinkedHashMap<String, String> _retryLater = LinkedHashMap();
+
+  static void _retryFailed() {
+    final byKind = <String, List<String>>{};
+    _retryLater.forEach((t, k) => (byKind[k] ??= []).add(t));
+    _retryLater.clear();
+    byKind.forEach((k, ts) => translateAll(ts, kind: k));
   }
 
   // 아무 말이나 한국어로 (번역 고치기 창에서 '선택한 원문 뜻 보기')
@@ -1130,12 +1177,15 @@ class _KoJob {
 }
 
 class _GEndpoint {
-  _GEndpoint(this.name, this.url, this.post);
+  _GEndpoint(this.name, this.url, this.client);
   final String name;
   final String url;
-  final bool post;
+  final String client; // 'gtx' | 'dict'
   DateTime? blockedUntil;
+  DateTime? lastCheck;
   int strikes = 0;
+  bool unsupported = false;
+  String? reason;
   bool get blocked =>
       blockedUntil != null && DateTime.now().isBefore(blockedUntil!);
 }
