@@ -104,10 +104,13 @@ class KoBuilder extends StatefulWidget {
     required this.text,
     required this.enabled,
     required this.builder,
+    this.kind = 'text',
   });
 
   final String text;
   final bool enabled;
+  // 'text' 제목 등, 'reply' 댓글 (항목별 번역기 설정에 씀)
+  final String kind;
   final Widget Function(BuildContext context, String? ko) builder;
 
   @override
@@ -122,7 +125,7 @@ class _KoBuilderState extends State<KoBuilder> {
   void _sync() {
     final watch = widget.enabled && KoTr.needs(widget.text);
     if (watch) {
-      KoTr.want(widget.text);
+      KoTr.want(widget.text, kind: widget.kind);
       if (!_listening) {
         KoTr.updates.addListener(_onUpdate);
         _listening = true;
@@ -177,10 +180,12 @@ class KoWatch extends StatefulWidget {
     required this.texts,
     required this.enabled,
     required this.builder,
+    this.kind = 'text',
   });
 
   final List<String> texts;
   final bool enabled;
+  final String kind;
   final WidgetBuilder builder;
 
   @override
@@ -196,7 +201,11 @@ class _KoWatchState extends State<KoWatch> {
 
   void _sync() {
     if (_waiting) {
-      if (widget.enabled) widget.texts.forEach(KoTr.want);
+      if (widget.enabled) {
+        for (final t in widget.texts) {
+          KoTr.want(t, kind: widget.kind);
+        }
+      }
       if (!_listening) {
         KoTr.updates.addListener(_onUpdate);
         _listening = true;

@@ -1,4 +1,6 @@
 // 한국어 번역 설정 항목 (설정 → 弹幕设置 맨 위)
+import 'package:PiliPlus/ko/ko_engines.dart';
+import 'package:PiliPlus/ko/ko_engines_page.dart';
 import 'package:PiliPlus/ko/ko_translate.dart';
 import 'package:PiliPlus/ko/ko_works.dart';
 import 'package:PiliPlus/pages/setting/models/model.dart';
@@ -16,39 +18,40 @@ List<SettingsModel> get koSettings => [
     defaultVal: true,
   ),
   NormalModel(
-    title: '번역기',
-    getSubtitle: () => KoTr.engine == 'gemini'
-        ? '제미나이 — 밈·은어를 뜻이 통하게 의역 (무료 키 필요)'
-              '${KoTr.lastGeminiError != null ? '\n최근 제미나이 실패: ${KoTr.lastGeminiError} → 구글로 대신 번역 중' : ''}'
-        : '구글 번역 — 무료, 키 필요 없음, 빠름',
-    leading: const Icon(Icons.language),
-    onTap: _pickEngine,
+    title: 'AI 번역기',
+    getSubtitle: () {
+      final engines = KoEngines.list.where((e) => e.usable).toList();
+      if (engines.isEmpty) {
+        return '없음 — 지금은 전부 구글 번역. 제미나이·Groq·NVIDIA 등 무료 키를 넣으면 밈·은어를 뜻이 통하게 의역해요';
+      }
+      final err = KoTr.lastAiError;
+      return '${engines.map((e) => e.name).join(' → ')} (막히면 다음 것, 다 막히면 구글)'
+          '${err != null ? '\n최근 오류: $err' : ''}';
+    },
+    leading: const Icon(Icons.auto_awesome_outlined),
+    onTap: (context, setState) async {
+      await Get.to(() => const KoEnginesPage());
+      setState();
+    },
   ),
   NormalModel(
-    title: '제미나이 API 키',
-    getSubtitle: () => KoTr.geminiKey.isEmpty
-        ? '없음 (aistudio.google.com/apikey 에서 무료 발급)'
-        : '입력됨 (${KoTr.geminiKey.length > 6 ? KoTr.geminiKey.substring(0, 6) : KoTr.geminiKey}…)',
-    leading: const Icon(Icons.vpn_key_outlined),
-    onTap: (context, setState) => _editText(
-      context,
-      setState,
-      title: '제미나이 API 키',
-      key: KoTr.kKey,
-      hint: 'AIza로 시작하는 키',
-    ),
-  ),
-  NormalModel(
-    title: '제미나이 모델',
-    getSubtitle: () => KoTr.geminiModel,
-    leading: const Icon(Icons.memory),
-    onTap: (context, setState) => _editText(
-      context,
-      setState,
-      title: '제미나이 모델 이름',
-      key: KoTr.kModel,
-      hint: KoTr.defaultModel,
-    ),
+    title: 'AI 번역기를 쓸 항목',
+    getSubtitle: () {
+      const names = {
+        'dm': '탄막',
+        'live': '라이브 탄막',
+        'sub': '자막',
+        'text': '제목·소개·검색',
+        'reply': '댓글',
+      };
+      final on = names.entries
+          .where((e) => GStorage.setting.get(_aiKey(e.key), defaultValue: _aiDef(e.key)) == true)
+          .map((e) => e.value)
+          .toList();
+      return on.isEmpty ? '없음 (전부 구글 번역)' : '${on.join(', ')} · 나머지는 구글 번역';
+    },
+    leading: const Icon(Icons.tune),
+    onTap: _pickAiKinds,
   ),
   const SwitchModel(
     title: '제목·소개·게시글 번역',
@@ -147,7 +150,7 @@ List<SettingsModel> get koSettings => [
   ),
   NormalModel(
     title: '공통 용어집 점검',
-    subtitle: '웹 검색·제미나이로 표기가 틀린 항목 찾기 (제미나이 키 필요)',
+    subtitle: '웹 검색·AI로 표기가 틀린 항목 찾기 (제미나이 키 필요)',
     leading: const Icon(Icons.fact_check_outlined),
     onTap: (context, setState) async {
       await checkGlossary(context, null);
@@ -165,7 +168,7 @@ List<SettingsModel> get koSettings => [
   ),
   NormalModel(
     title: '번역 테스트',
-    subtitle: '탄막 예시 몇 개를 번역해서 보여줘요',
+    subtitle: '예시 문장을 지금 설정으로 번역해서 보여줘요 (제목·댓글 설정 기준)',
     leading: const Icon(Icons.play_circle_outline),
     onTap: (context, setState) async {
       SmartDialog.showLoading(msg: '번역 중…');
@@ -184,37 +187,59 @@ List<SettingsModel> get koSettings => [
   ),
 ];
 
-void _pickEngine(BuildContext context, VoidCallback setState) {
-  void pick(String v) {
-    GStorage.setting.put(KoTr.kEngine, v);
-    KoTr.clearCache();
-    Get.back();
-    setState();
-    if (v == 'gemini' && KoTr.geminiKey.isEmpty) {
-      SmartDialog.showToast('제미나이 API 키를 입력해야 써져요');
-    }
-  }
+String _aiKey(String kind) => switch (kind) {
+  'dm' => KoTr.kAiDm,
+  'live' => KoTr.kAiLive,
+  'sub' => KoTr.kAiSub,
+  'reply' => KoTr.kAiReply,
+  _ => KoTr.kAiText,
+};
 
+bool _aiDef(String kind) => kind == 'sub' || kind == 'text' || kind == 'reply';
+
+void _pickAiKinds(BuildContext context, VoidCallback setState) {
+  const items = [
+    ('dm', '탄막', '양이 아주 많아서 한도가 빨리 닳아요. 기본은 구글'),
+    ('live', '라이브 탄막', '빨리 떠야 해서 기본은 구글'),
+    ('sub', '자막', ''),
+    ('text', '제목·소개·검색 화면', ''),
+    ('reply', '댓글', ''),
+  ];
   showDialog(
     context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('번역기'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextButton(
-            onPressed: () => pick('google'),
-            child: const Text('구글 번역 (무료, 키 없음, 빠름)'),
+    builder: (context) => StatefulBuilder(
+      builder: (context, setDlg) => AlertDialog(
+        title: const Text('AI 번역기를 쓸 항목'),
+        contentPadding: const EdgeInsets.only(top: 8),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final (k, name, note) in items)
+                CheckboxListTile(
+                  dense: true,
+                  title: Text(name),
+                  subtitle: note.isEmpty ? null : Text(note),
+                  value: GStorage.setting.get(_aiKey(k), defaultValue: _aiDef(k)) == true,
+                  onChanged: (v) {
+                    GStorage.setting.put(_aiKey(k), v ?? false);
+                    setDlg(() {});
+                  },
+                ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(24, 4, 24, 0),
+                child: Text(
+                  '체크 안 한 항목은 구글 번역으로 해요. AI 번역기가 다 막혀도 구글로 넘어가요.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => pick('gemini'),
-            child: const Text('제미나이 (밈·은어 의역, 무료 키 필요)'),
-          ),
-        ],
+        ),
+        actions: [TextButton(onPressed: Get.back, child: const Text('확인'))],
       ),
     ),
-  );
+  ).whenComplete(setState);
 }
 
 void _editText(

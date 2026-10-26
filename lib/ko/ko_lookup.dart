@@ -175,7 +175,7 @@ abstract final class KoLookup {
         KoCandidate(
           zh,
           (o['why'] ?? '').toString(),
-          ev.isNotEmpty ? '웹 검색 근거' : '제미나이 추측',
+          ev.isNotEmpty ? '웹 검색 근거' : 'AI 추측',
           ev,
         ),
       );

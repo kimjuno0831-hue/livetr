@@ -128,8 +128,8 @@ class _KoFixPageState extends State<KoFixPage> {
       SmartDialog.showToast('한국어 번역에서 틀린 단어를 먼저 길게 눌러 선택하세요');
       return;
     }
-    if (!KoTr.hasGeminiKey) {
-      _setInfo('제미나이 키가 없어서 자동으로 찾을 수 없어요. 원문에서 글자를 골라 [선택한 원문 뜻 보기]로 직접 찾아보세요.');
+    if (!KoTr.hasAi) {
+      _setInfo('AI 번역기가 없어서 자동으로 찾을 수 없어요. 원문에서 글자를 골라 [선택한 원문 뜻 보기]로 직접 찾아보세요.');
       return;
     }
     _run(() async {
@@ -140,7 +140,7 @@ class _KoFixPageState extends State<KoFixPage> {
         if (_termKo.text.isEmpty) _termKo.text = word;
         _setInfo("'$word' ← 원문 '$r'\n아래 '앞으로 이렇게 번역해줘' 칸을 원하는 말로 고치고 저장하세요.");
       } else {
-        _setInfo('정확히 찾지 못했어요${r != null ? ' (제미나이 답: $r)' : ''}. 원문에서 직접 선택해 주세요.');
+        _setInfo('정확히 찾지 못했어요${r != null ? ' (AI 답: $r)' : ''}. 원문에서 직접 선택해 주세요.');
       }
     });
   }
@@ -152,8 +152,8 @@ class _KoFixPageState extends State<KoFixPage> {
       SmartDialog.showToast("먼저 '앞으로 이렇게 번역해줘' 칸에 한국어 이름을 적어주세요");
       return;
     }
-    if (!KoTr.hasGeminiKey) {
-      _setInfo('제미나이 키가 필요해요. [웹에서 찾아보기]로 직접 확인해 주세요.');
+    if (!KoTr.hasAi) {
+      _setInfo('AI 번역기가 필요해요. [웹에서 찾아보기]로 직접 확인해 주세요.');
       return;
     }
     final work = _target?.name;
@@ -161,14 +161,14 @@ class _KoFixPageState extends State<KoFixPage> {
       _setInfo(
         work == null
             ? "'$k' 찾는 중… (작품을 고르면 더 정확해요)"
-            : "'$work'에서 '$k' 찾는 중… (웹 검색 후 제미나이가 읽어요)",
+            : "'$work'에서 '$k' 찾는 중… (웹 검색 후 AI가 읽어요)",
       );
       final cs = await KoLookup.find(k, context: widget.zh, work: work);
       setState(() => _cands = cs);
       _setInfo(
         cs.isEmpty
             ? "'$k'의 표기를 찾지 못했어요. [웹에서 찾아보기]로 직접 확인해주세요."
-            : "후보를 눌러서 고르세요. '제미나이 추측'은 웹 근거가 없는 거라 한 번 더 확인해보세요.",
+            : "후보를 눌러서 고르세요. 'AI 추측'은 웹 근거가 없는 거라 한 번 더 확인해보세요.",
       );
     });
   }
@@ -239,7 +239,7 @@ class _KoFixPageState extends State<KoFixPage> {
             ),
             gap(),
             Text(
-              '지금 번역${KoTr.viaGoogle(widget.zh) ? ' (제미나이 실패로 구글 번역)' : ''}${hasOv ? ' (직접 고친 번역)' : ''} — 틀린 단어를 길게 눌러 선택',
+              '지금 번역${KoTr.byOf(widget.zh) != null ? ' (${KoTr.byOf(widget.zh)})' : ''} — 틀린 단어를 길게 눌러 선택',
               style: label,
             ),
             TextField(

@@ -26,13 +26,13 @@ class _KoWorksPageState extends State<KoWorksPage> {
     KoTr.works.add(w);
     KoTr.saveWorks();
     setState(() {});
-    if (KoTr.hasGeminiKey && mounted) {
+    if (KoTr.hasAi && mounted) {
       final ok = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('용어집 자동 만들기'),
           content: Text(
-            "'${w.name}'의 등장인물·지명 같은 용어를 웹 검색과 제미나이로 모아서 용어집 초안을 만들까요? (30초쯤 걸려요)",
+            "'${w.name}'의 등장인물·지명 같은 용어를 웹 검색과 AI로 모아서 용어집 초안을 만들까요? (30초쯤 걸려요)",
           ),
           actions: [
             TextButton(onPressed: () => Get.back(result: false), child: const Text('나중에')),
@@ -226,7 +226,7 @@ class _KoWorkEditPageState extends State<KoWorkEditPage> {
                       });
                     }
                   },
-                  child: const Text('자동 만들기 (웹 검색 + 제미나이)'),
+                  child: const Text('자동 만들기 (웹 검색 + AI)'),
                 ),
                 OutlinedButton(
                   onPressed: () async {
@@ -266,11 +266,11 @@ Future<String?> _askText(BuildContext context, String title, {String hint = ''})
 
 // 작품 용어집 자동 만들기: 후보를 보여주고 체크한 것만 넣음
 Future<void> autoBuild(BuildContext context, KoWork w) async {
-  if (!KoTr.hasGeminiKey) {
-    SmartDialog.showToast('제미나이 키가 필요해요 (번역기 설정에서 입력)');
+  if (!KoTr.hasAi) {
+    SmartDialog.showToast('AI 번역기가 필요해요 (설정 → AI 번역기)');
     return;
   }
-  SmartDialog.showLoading(msg: "'${w.name}' 용어를 찾는 중…\n(웹 검색 후 제미나이가 정리해요)");
+  SmartDialog.showLoading(msg: "'${w.name}' 용어를 찾는 중…\n(웹 검색 후 AI가 정리해요)");
   List<KoTerm> terms;
   try {
     terms = await KoLookup.buildWorkGlossary(w.name);
@@ -344,8 +344,8 @@ Future<void> autoBuild(BuildContext context, KoWork w) async {
 
 // 용어집 점검 (w 가 null 이면 공통 용어집)
 Future<void> checkGlossary(BuildContext context, KoWork? w) async {
-  if (!KoTr.hasGeminiKey) {
-    SmartDialog.showToast('제미나이 키가 필요해요 (번역기 설정에서 입력)');
+  if (!KoTr.hasAi) {
+    SmartDialog.showToast('AI 번역기가 필요해요 (설정 → AI 번역기)');
     return;
   }
   final entries = KoTr.parseGlossary(w?.glossary ?? KoTr.commonGlossaryText);
