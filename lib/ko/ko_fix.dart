@@ -251,6 +251,10 @@ class _KoFixPageState extends State<KoFixPage> {
             Wrap(
               children: [
                 btn('번역 복사', () => Utils.copyText(_koViewCtrl.text)),
+                btn('다시 번역', () {
+                  KoTr.retranslate(widget.zh);
+                  _setInfo('다시 번역하는 중… 잠시 뒤 위 번역이 바뀌어요.');
+                }),
                 if (widget.origId != null)
                   btn(
                     KoTr.showOrig.contains(widget.origId!) ? '번역으로 보기' : '원문으로 보기',

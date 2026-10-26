@@ -429,8 +429,35 @@ abstract final class KoTr {
   static final Map<String, List<String>> _wantBuf = {};
   static final Map<String, Timer> _wantTimer = {};
 
+  // 두 번 다 번역에 실패한 줄: 10분 동안 다시 요청 안 함 (한도 낭비 방지)
+  static final LinkedHashMap<String, DateTime> _gaveUp = LinkedHashMap();
+
+  static bool _givenUp(String s) {
+    final t = _gaveUp[s];
+    if (t == null) return false;
+    if (DateTime.now().difference(t).inMinutes >= 10) {
+      _gaveUp.remove(s);
+      return false;
+    }
+    return true;
+  }
+
+  // 번역 고치기 창의 [다시 번역]: 저장된 번역을 지우고 새로
+  static Future<void> retranslate(String s, {String kind = 'text'}) {
+    for (final c in _caches) {
+      c.remove(s);
+    }
+    _gaveUp.remove(s);
+    _viaGoogle.remove(s);
+    _by.remove(s);
+    updates.value++;
+    return translateAll([s], kind: kind);
+  }
+
   static void want(String s, {String kind = 'text'}) {
-    if (!needs(s) || isTranslated(s) || _pending.contains(s)) return;
+    if (!needs(s) || isTranslated(s) || _pending.contains(s) || _givenUp(s)) {
+      return;
+    }
     final m = _memeOf(s);
     if (m != null) {
       _put(s, m, by: '밈 사전');
@@ -521,6 +548,7 @@ abstract final class KoTr {
       if (!needs(t) ||
           isTranslated(t) ||
           _pending.contains(t) ||
+          _givenUp(t) ||
           !seen.add(t)) {
         continue;
       }
@@ -596,10 +624,14 @@ abstract final class KoTr {
       for (var i = 0; i < job.texts.length; i++) {
         final r = i < out.length ? out[i] : null;
         if (r == null || r.trim().isEmpty) {
-          // 구글이 막혀서 못 한 것: 풀리면 다시
           if (googleBlocked) {
+            // 구글이 막혀서 못 한 것: 풀리면 다시
             if (_retryLater.length > 5000) _retryLater.clear();
             _retryLater[job.texts[i]] = job.kind;
+          } else if (!job.refining) {
+            // 번역기가 다 원문을 돌려줌 → 잠시 포기
+            if (_gaveUp.length > 5000) _gaveUp.remove(_gaveUp.keys.first);
+            _gaveUp[job.texts[i]] = DateTime.now();
           }
           continue;
         }
@@ -704,7 +736,73 @@ abstract final class KoTr {
   }
 
   // ── 엔진 ── 결과: (번역들, AI 대신 구글로 번역했는지, 번역한 곳)
+  // ── 번역 결과 검사: 원문(중국어)을 그대로 돌려준 건 번역 실패로 봄 ──
+  static final _hanAll = RegExp(r'[㐀-䶿一-鿿]');
+  static final _hangulAll = RegExp(r'[가-힣]');
+
+  static bool _valid(String src, String? out) {
+    if (out == null) return false;
+    final t = out.trim();
+    if (t.isEmpty) return false;
+    if (!_cjk.hasMatch(src)) return true; // 2333 같은 밈
+    if (t == src.trim()) return false;
+    final han = _hanAll.allMatches(t).length;
+    if (han == 0) return true;
+    final hangul = _hangulAll.allMatches(t).length;
+    if (hangul == 0) return false;
+    return han <= hangul; // 한자가 한글보다 많이 남았으면 덜 된 번역
+  }
+
+  // 번역하고, 원문을 그대로 돌려준 줄은 다른 번역기(AI ↔ 구글)로 한 번 더
   static Future<(List<String?>, bool, String)> _batch(
+    List<String> xs,
+    String kind, {
+    String? mode,
+    bool googleFallback = true,
+    int? style,
+  }) async {
+    final st = style ?? KoTr.style;
+    final (out0, viaG, by) = await _batchRaw(
+      xs,
+      kind,
+      mode: mode,
+      googleFallback: googleFallback,
+      style: st,
+    );
+    final out = List<String?>.of(out0);
+    while (out.length < xs.length) {
+      out.add(null);
+    }
+    final bad = <int>[
+      for (var i = 0; i < xs.length; i++)
+        if (!_valid(xs[i], out[i])) i,
+    ];
+    if (bad.isEmpty) return (out, viaG, by);
+    for (final i in bad) {
+      out[i] = null;
+    }
+    if (!googleFallback) return (out, viaG, by); // 다듬기: 구글 번역을 그대로 둠
+    final sub = [for (final i in bad) xs[i]];
+    List<String?>? retry;
+    try {
+      if (by.startsWith('구글')) {
+        if (hasAi) {
+          final (r, _) = await KoEngines.rotate((s) => _aiTranslate(s, sub, st));
+          retry = r;
+        }
+      } else if (!googleBlocked) {
+        retry = await _googleSafe(sub);
+      }
+    } catch (_) {}
+    if (retry != null) {
+      for (var k = 0; k < bad.length && k < retry.length; k++) {
+        if (_valid(sub[k], retry[k])) out[bad[k]] = retry[k];
+      }
+    }
+    return (out, viaG, by);
+  }
+
+  static Future<(List<String?>, bool, String)> _batchRaw(
     List<String> xs,
     String kind, {
     String? mode,
@@ -1124,7 +1222,7 @@ abstract final class KoTr {
 
   static String _stylePrompt(int st) => switch (st) {
     0 =>
-      '원문의 뜻과 표현을 최대한 그대로 옮겨라. 의역하거나 말투를 바꾸거나 내용을 보태지 마라. '
+      '원문의 뜻과 표현을 최대한 그대로 한국어로 옮겨라 (원문에 충실하라는 건 뜻을 바꾸지 말라는 것이지 중국어를 그대로 두라는 게 아니다). 의역하거나 말투를 바꾸거나 내용을 보태지 마라. '
           '밈·은어도 원래 표현을 살려 옮기되, 한국 사람이 전혀 못 알아들을 것만 괄호로 짧게 뜻을 덧붙여라(예: 2333 → 2333(ㅋㅋㅋ)). '
           '애칭은 음역하라(예: 老马 → 라오마, 小堂 → 샤오탕). ',
     1 =>
@@ -1159,7 +1257,8 @@ abstract final class KoTr {
         '영상 제목·댓글·게시글·검색어도 들어온다. [doge] 같은 대괄호 이모티콘, @닉네임, 링크, BV번호는 그대로 둬라. 줄바꿈은 유지하라. ',
       )
       ..write(
-        '입력은 JSON 문자열 배열이다. 입력 배열과 같은 길이·같은 순서의 JSON 문자열 배열 하나로만 답하라. 설명이나 다른 글은 쓰지 마라.',
+        '모든 항목을 반드시 한국어로 번역하라. 중국어 원문을 그대로 돌려주거나 일부만 번역하고 남기지 마라(고유명사는 한국어로 음역). '
+        '입력은 JSON 문자열 배열이다. 입력 배열과 같은 길이·같은 순서의 JSON 문자열 배열 하나로만 답하라. 항목을 빼거나 합치지 마라. 설명이나 다른 글은 쓰지 마라.',
       );
     final names = activeWorks.map((e) => e.name).toList();
     if (names.isNotEmpty) {
@@ -1190,7 +1289,16 @@ abstract final class KoTr {
         ...await _aiTranslate(slot, xs.sublist(mid), st),
       ];
     }
-    return arr.map((e) => e?.toString()).toList();
+    final res = arr.map((e) => e?.toString()).toList();
+    // 절반 넘게 원문을 그대로 돌려줬으면 이 번역기는 실패로 보고 다음 번역기로
+    var bad = 0;
+    for (var i = 0; i < xs.length; i++) {
+      if (!_valid(xs[i], res[i])) bad++;
+    }
+    if (xs.length >= 2 && bad * 2 > xs.length) {
+      throw FormatException('원문을 그대로 돌려줌 ($bad/${xs.length})');
+    }
+    return res;
   }
 
   // AI 에게 묻기 (번역 고치기·용어집 만들기에서 씀). 등록된 AI 번역기를 돌려가며.
