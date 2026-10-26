@@ -491,7 +491,7 @@ abstract final class KoTr {
     _pending.addAll(todo);
     final ai = aiFor(kind);
     // 탄막은 양이 많아서 '구글 먼저'를 안 씀 (AI 를 쓰면 바로 AI 로)
-    final refine = ai && refineOn && kind != 'dm';
+    final refine = ai && refineOn && kind != 'dm' && !googleBlocked;
     final lane = _laneOf(kind);
     final size = refine
         ? 80
@@ -550,16 +550,26 @@ abstract final class KoTr {
       }
       for (var i = 0; i < job.texts.length; i++) {
         final r = i < out.length ? out[i] : null;
-        if (r != null && r.trim().isNotEmpty) {
+        if (r == null || r.trim().isEmpty) {
+          // 구글이 막혀서 못 한 것: 풀리면 다시
+          if (googleBlocked) {
+            if (_retryLater.length > 5000) _retryLater.clear();
+            _retryLater[job.texts[i]] = job.kind;
+          }
+          continue;
+        }
+        {
           _put(
             job.texts[i],
             r.trim(),
             viaGoogle: viaG,
-            by: job.refineAfter ? '구글 번역 (AI 번역 기다리는 중)' : by,
+            by: job.refineAfter && by.startsWith('구글')
+                ? '구글 번역 (AI 번역 기다리는 중)'
+                : by,
           );
         }
       }
-      if (job.refineAfter) {
+      if (job.refineAfter && by.startsWith('구글')) {
         // 구글로 먼저 보여줬으니 AI 로 다듬기 (작게 나눠서, 별도 줄에서)
         final size = _chunkFor(job.kind, true);
         final parts = <_KoJob>[];
@@ -659,7 +669,22 @@ abstract final class KoTr {
         return (await _googleSafe(xs), true, '구글 번역 (AI 대신)');
       }
     }
-    return (await _googleSafe(xs), false, '구글 번역');
+    // 구글이 막혀 있으면 AI 번역기로 대신
+    if (googleBlocked && hasAi) {
+      try {
+        final (r, slot) = await KoEngines.rotate((s) => _aiTranslate(s, xs));
+        return (r, false, '${slot.label} (구글이 막혀서)');
+      } catch (_) {}
+    }
+    final g = await _googleSafe(xs);
+    if (hasAi && googleBlocked && g.every((e) => e == null)) {
+      // 번역 도중 구글이 막힘 → AI 로 다시
+      try {
+        final (r, slot) = await KoEngines.rotate((s) => _aiTranslate(s, xs));
+        return (r, false, '${slot.label} (구글이 막혀서)');
+      } catch (_) {}
+    }
+    return (g, false, '구글 번역');
   }
 
   static String _applyGlossary(String s, List<MapEntry<String, String>> gl) {
@@ -802,27 +827,174 @@ abstract final class KoTr {
     return [...a, ...b];
   }
 
+  // ── 구글 번역 통로 ──
+  // 무료 통로라 한꺼번에 많이 보내면 구글이 잠깐 막음 → 동시에 2개, 0.15초 간격으로만 보내고
+  // 거절당하면 그 통로를 잠깐 쉬게 하고 다른 통로로. 다 막히면 AI 번역기로 대신함.
+  static final List<_GEndpoint> _gEndpoints = [
+    _GEndpoint('기본', 'https://translate.googleapis.com/translate_a/single', true),
+    _GEndpoint('보조 1', 'https://translate.googleapis.com/translate_a/t', false),
+    _GEndpoint('보조 2', 'https://clients5.google.com/translate_a/t', false),
+  ];
+  static int _gActive = 0;
+  static final Queue<Completer<void>> _gWait = Queue();
+  static DateTime _gLast = DateTime(2000);
+
+  static Future<void> _gAcquire() async {
+    while (_gActive >= 2) {
+      final c = Completer<void>();
+      _gWait.add(c);
+      await c.future;
+    }
+    _gActive++;
+    final wait = 150 - DateTime.now().difference(_gLast).inMilliseconds;
+    _gLast = DateTime.now().add(Duration(milliseconds: wait > 0 ? wait : 0));
+    if (wait > 0) await Future.delayed(Duration(milliseconds: wait));
+  }
+
+  static void _gRelease() {
+    _gActive--;
+    if (_gWait.isNotEmpty) _gWait.removeFirst().complete();
+  }
+
+  // 지금 구글로 번역할 수 있는 통로가 하나도 없는지
+  static bool get googleBlocked => _gEndpoints.every((e) => e.blocked);
+
+  // 구글이 막혀서 못 한 번역 (원문 → 항목)
+  static final LinkedHashMap<String, String> _retryLater = LinkedHashMap();
+
+  static void _retryFailed() {
+    final byKind = <String, List<String>>{};
+    _retryLater.forEach((t, k) => (byKind[k] ??= []).add(t));
+    _retryLater.clear();
+    byKind.forEach((k, ts) => translateAll(ts, kind: k));
+  }
+
+  // 설정 화면에 보여줄 구글 상태
+  static String get googleStatus {
+    if (_gEndpoints.every((e) => !e.blocked && e.strikes == 0)) return '정상';
+    return _gEndpoints.map((e) {
+      if (!e.blocked) return '${e.name}: 정상';
+      final left = e.blockedUntil!.difference(DateTime.now());
+      final m = left.inMinutes;
+      return '${e.name}: 막힘 (${m < 1 ? 1 : m}분 뒤 다시 시도)';
+    }).join(' · ');
+  }
+
+  static void resetGoogle() {
+    for (final e in _gEndpoints) {
+      e
+        ..blockedUntil = null
+        ..strikes = 0;
+    }
+  }
+
+  static void _gBlock(_GEndpoint e) {
+    e.strikes++;
+    // 2분 → 5분 → 15분 → 30분 → 60분
+    const steps = [2, 5, 15, 30, 60];
+    final m = steps[e.strikes - 1 < steps.length ? e.strikes - 1 : steps.length - 1];
+    e.blockedUntil = DateTime.now().add(Duration(minutes: m));
+  }
+
   static Future<String> _google(
     String text, {
     String sl = 'auto',
     String tl = 'ko',
   }) async {
-    final res = await _dio.post<String>(
-      'https://translate.googleapis.com/translate_a/single',
-      queryParameters: {'client': 'gtx', 'sl': sl, 'tl': tl, 'dt': 't'},
-      data: 'q=${Uri.encodeQueryComponent(text)}',
-      options: Options(
-        contentType: 'application/x-www-form-urlencoded;charset=utf-8',
-        responseType: ResponseType.plain,
-        headers: {'User-Agent': 'Mozilla/5.0'},
-      ),
-    );
-    final j = jsonDecode(res.data!) as List;
-    final sb = StringBuffer();
-    for (final seg in (j[0] as List)) {
-      if (seg is List && seg.isNotEmpty && seg[0] is String) sb.write(seg[0]);
+    if (googleBlocked) throw const _GoogleBlocked();
+    await _gAcquire();
+    try {
+      final encLen = Uri.encodeQueryComponent(text).length;
+      Object? lastErr;
+      for (final ep in _gEndpoints) {
+        if (ep.blocked) continue;
+        // 보조 통로는 주소에 글을 넣어 보내서 짧은 글만
+        if (!ep.post && encLen > 1800) continue;
+        try {
+          final r = await _callGoogle(ep, text, sl, tl);
+          final wasBlocked = ep.strikes > 0;
+          ep.strikes = 0;
+          if (wasBlocked && _retryLater.isNotEmpty) {
+            // 구글이 다시 됨 → 막혀서 못 한 번역을 다시
+            Future.microtask(_retryFailed);
+          }
+          return r;
+        } on DioException catch (e) {
+          final code = e.response?.statusCode;
+          final body = e.response?.data?.toString() ?? '';
+          if (code == 429 || code == 403 || code == 503 || body.contains('sorry')) {
+            _gBlock(ep);
+            lastErr = e;
+            continue;
+          }
+          lastErr = e;
+          if (code == null) rethrow; // 인터넷 문제는 다른 통로도 같음
+        } on _GoogleBlocked catch (e) {
+          // 사람 확인 화면(HTML)이 옴 → 막힌 것
+          _gBlock(ep);
+          lastErr = e;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      if (googleBlocked) throw const _GoogleBlocked();
+      throw lastErr ?? Exception('구글 번역 실패');
+    } finally {
+      _gRelease();
     }
-    final out = sb.toString();
+  }
+
+  static Future<String> _callGoogle(
+    _GEndpoint ep,
+    String text,
+    String sl,
+    String tl,
+  ) async {
+    final Response<String> res;
+    if (ep.post) {
+      res = await _dio.post<String>(
+        ep.url,
+        queryParameters: {'client': 'gtx', 'sl': sl, 'tl': tl, 'dt': 't'},
+        data: 'q=${Uri.encodeQueryComponent(text)}',
+        options: Options(
+          contentType: 'application/x-www-form-urlencoded;charset=utf-8',
+          responseType: ResponseType.plain,
+          headers: {'User-Agent': 'Mozilla/5.0'},
+        ),
+      );
+    } else {
+      res = await _dio.get<String>(
+        ep.url,
+        queryParameters: {
+          'client': 'dict-chrome-ex',
+          'sl': sl,
+          'tl': tl,
+          'q': text,
+        },
+        options: Options(
+          responseType: ResponseType.plain,
+          headers: {'User-Agent': 'Mozilla/5.0'},
+        ),
+      );
+    }
+    final raw = (res.data ?? '').trimLeft();
+    if (raw.startsWith('<')) throw const _GoogleBlocked();
+    final j = jsonDecode(raw);
+    String out = '';
+    if (ep.post) {
+      final sb = StringBuffer();
+      for (final seg in ((j as List)[0] as List)) {
+        if (seg is List && seg.isNotEmpty && seg[0] is String) sb.write(seg[0]);
+      }
+      out = sb.toString();
+    } else if (j is List && j.isNotEmpty) {
+      final x = j[0];
+      if (x is String) {
+        out = x;
+      } else if (x is List && x.isNotEmpty && x[0] is String) {
+        out = x[0] as String;
+      }
+    }
     if (out.trim().isEmpty) throw Exception('empty');
     return out.trimRight();
   }
@@ -864,6 +1036,11 @@ abstract final class KoTr {
       )
       ..write(
         '영상 제목·댓글·게시글·검색어도 들어온다. [doge] 같은 대괄호 이모티콘, @닉네임, 링크, BV번호는 그대로 둬라. 줄바꿈은 유지하라. ',
+      )
+      ..write(
+        '애칭은 글자 그대로 옮기지 마라: 老X(라오X)는 친근한 "X 형/X 씨" 느낌, 小X(샤오X)·阿X·XX(글자 반복)는 귀여워하는 애칭(예: 小堂→돈키), '
+        'X子는 "X이/X 녀석" 같은 허물없는 별명이고 이름 글자에서 온 말장난일 수 있다(예: 림버스의 李箱을 箱子라 부름 → 이상). '
+        '儿子·鹅子(팬이 아끼는 남캐)→우리 아들, 女儿→우리 딸, 崽·崽崽→우리 애기. 老·小·子를 "늙은/작은/아들"로 직역하지 마라. ',
       )
       ..write(
         '입력은 JSON 문자열 배열이다. 입력 배열과 같은 길이·같은 순서의 JSON 문자열 배열 하나로만 답하라. 설명이나 다른 글은 쓰지 마라.',
@@ -950,4 +1127,21 @@ class _KoJob {
   final bool refineAfter; // 구글로 끝낸 뒤 AI 로 다듬기를 이어서
   final bool refining; // 다듬기 작업 (실패해도 구글 번역이 이미 있음)
   final Completer<void> first = Completer<void>();
+}
+
+class _GEndpoint {
+  _GEndpoint(this.name, this.url, this.post);
+  final String name;
+  final String url;
+  final bool post;
+  DateTime? blockedUntil;
+  int strikes = 0;
+  bool get blocked =>
+      blockedUntil != null && DateTime.now().isBefore(blockedUntil!);
+}
+
+class _GoogleBlocked implements Exception {
+  const _GoogleBlocked();
+  @override
+  String toString() => '구글 번역이 잠깐 막힘';
 }

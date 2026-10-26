@@ -53,6 +53,17 @@ List<SettingsModel> get koSettings => [
     leading: const Icon(Icons.tune),
     onTap: _pickAiKinds,
   ),
+  NormalModel(
+    title: '구글 번역 상태',
+    getSubtitle: () =>
+        '${KoTr.googleStatus}\n요청이 너무 많으면 구글이 잠깐 막아요. 막혀 있는 동안은 AI 번역기로 대신해요 (누르면 바로 다시 시도)',
+    leading: const Icon(Icons.g_translate),
+    onTap: (context, setState) {
+      KoTr.resetGoogle();
+      SmartDialog.showToast('구글 번역을 다시 시도해요');
+      setState();
+    },
+  ),
   const SwitchModel(
     title: '먼저 구글, 나중에 AI로 다듬기',
     subtitle: '댓글·제목·자막을 구글 번역으로 바로 보여주고, AI 번역이 오면 바꿔요 (탄막 제외)',
