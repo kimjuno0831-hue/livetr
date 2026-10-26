@@ -1862,7 +1862,7 @@ index 3deb156..8ab0b35 100644
                    '${NumUtils.numFormat(voteCard.count.toInt())}人参与',
                    maxLines: 1,
 diff --git a/lib/pages/video/reply/widgets/reply_item_grpc.dart b/lib/pages/video/reply/widgets/reply_item_grpc.dart
-index e6ccd65..bcf393f 100644
+index e6ccd65..3daaf69 100644
 --- a/lib/pages/video/reply/widgets/reply_item_grpc.dart
 +++ b/lib/pages/video/reply/widgets/reply_item_grpc.dart
 @@ -1,3 +1,6 @@
@@ -1872,7 +1872,17 @@ index e6ccd65..bcf393f 100644
  import 'dart:math';
  
  import 'package:PiliPlus/common/assets.dart';
-@@ -334,6 +337,15 @@ class ReplyItemGrpc extends StatelessWidget {
+@@ -97,6 +100,9 @@ class ReplyItemGrpc extends StatelessWidget {
+   static bool enableWordRe = Pref.enableWordRe;
+   static int? replyLengthLimit = Pref.replyLengthLimit;
+ 
++  // 한국어 번역: '더 보기'로 그 자리에서 펼친 댓글 (댓글 id)
++  static final Set<Object> _koExpanded = {};
++
+   @override
+   Widget build(BuildContext context) {
+     final colorScheme = ColorScheme.of(context);
+@@ -334,12 +340,34 @@ class ReplyItemGrpc extends StatelessWidget {
              padding: padding,
              child: _buildVoteOption(colorScheme, replyControl.voteOption),
            ),
@@ -1888,7 +1898,27 @@ index e6ccd65..bcf393f 100644
          Padding(
            padding: padding,
            child: TextMore.rich(
-@@ -359,7 +371,9 @@ class ReplyItemGrpc extends StatelessWidget {
+             primary: colorScheme.primary,
+             style: const TextStyle(height: 1.75, fontSize: 14),
+-            maxLines: replyLevel == 1 ? replyLengthLimit : null,
++            // 한국어 번역: 번역문은 중국어보다 줄을 더 차지해서 접는 기준을 2줄 늘림.
++            // '더 보기'를 누르면 대댓글 화면으로 가지 않고 그 자리에서 펼침
++            maxLines: replyLevel == 1 && !_koExpanded.contains(replyItem.id)
++                ? (replyLengthLimit == null
++                      ? null
++                      : replyLengthLimit! +
++                            (ko != null && !KoTr.showOrig.contains(replyItem.id) ? 2 : 0))
++                : null,
++            onShowMore: replyLevel == 1
++                ? () {
++                    _koExpanded.add(replyItem.id);
++                    (context as Element).markNeedsBuild();
++                  }
++                : null,
+             TextSpan(
+               children: [
+                 if (replyControl.isUpTop) ...[
+@@ -359,7 +387,9 @@ class ReplyItemGrpc extends StatelessWidget {
                  _buildMessage(
                    context,
                    colorScheme,
@@ -1899,10 +1929,28 @@ index e6ccd65..bcf393f 100644
                        ? replyItem.translatedContent
                        : replyItem.content,
                    replyControl,
-@@ -368,6 +382,25 @@ class ReplyItemGrpc extends StatelessWidget {
+@@ -368,6 +398,43 @@ class ReplyItemGrpc extends StatelessWidget {
              ),
            ),
          ),
++        if (replyLevel == 1 && _koExpanded.contains(replyItem.id))
++          Padding(
++            padding: padding,
++            child: GestureDetector(
++              behavior: HitTestBehavior.opaque,
++              onTap: () {
++                _koExpanded.remove(replyItem.id);
++                (context as Element).markNeedsBuild();
++              },
++              child: Padding(
++                padding: const EdgeInsets.only(top: 2, bottom: 2),
++                child: Text(
++                  '접기',
++                  style: TextStyle(fontSize: 12, color: colorScheme.primary),
++                ),
++              ),
++            ),
++          ),
 +        if (ko != null)
 +          Padding(
 +            padding: padding,
@@ -1925,7 +1973,7 @@ index e6ccd65..bcf393f 100644
          if (replyItem.content.pictures.isNotEmpty) ...[
            Padding(
              padding: padding,
-@@ -393,7 +426,14 @@ class ReplyItemGrpc extends StatelessWidget {
+@@ -393,7 +460,14 @@ class ReplyItemGrpc extends StatelessWidget {
          if (replyLevel == 1 && replyItem.count > Int64.ZERO) ...[
            Padding(
              padding: const EdgeInsets.only(top: 5, bottom: 12),
@@ -1941,7 +1989,7 @@ index e6ccd65..bcf393f 100644
            ),
          ],
        ],
-@@ -656,7 +696,7 @@ class ReplyItemGrpc extends StatelessWidget {
+@@ -656,7 +730,7 @@ class ReplyItemGrpc extends StatelessWidget {
                            _buildMessage(
                              context,
                              colorScheme,
@@ -1950,7 +1998,7 @@ index e6ccd65..bcf393f 100644
                              childReply.replyControl,
                            ),
                          ],
-@@ -705,6 +745,17 @@ class ReplyItemGrpc extends StatelessWidget {
+@@ -705,6 +779,17 @@ class ReplyItemGrpc extends StatelessWidget {
      );
    }
  
@@ -1968,7 +2016,7 @@ index e6ccd65..bcf393f 100644
    InlineSpan _buildMessage(
      BuildContext context,
      ColorScheme colorScheme,
-@@ -1203,6 +1254,17 @@ class ReplyItemGrpc extends StatelessWidget {
+@@ -1203,6 +1288,17 @@ class ReplyItemGrpc extends StatelessWidget {
                  style: style,
                ),
              ),
