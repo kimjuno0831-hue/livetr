@@ -104,6 +104,13 @@ List<SettingsModel> get koSettings => [
     defaultVal: true,
   ),
   const SwitchModel(
+    title: '검색 결과 새로고침하면 섞기',
+    subtitle: '검색 결과를 당겨서 새로고침하면 앞쪽 몇 페이지 중에서 섞어서 보여줘요 (정렬 줄의 🎲 랜덤은 조건을 정해서 섞기)',
+    leading: Icon(Icons.shuffle),
+    setKey: KoTr.kSearchShuffle,
+    defaultVal: true,
+  ),
+  const SwitchModel(
     title: '한국어로 검색',
     subtitle: '검색어에 한국어가 있으면 중국어로 바꿔서 검색해요',
     leading: Icon(Icons.search),

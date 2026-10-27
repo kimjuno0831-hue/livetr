@@ -164,7 +164,7 @@ abstract final class KoQuick {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                     child: Text(
-                      '구글 번역: ${KoTr.googleStatus}',
+                      '최근 1분 번역 요청: ${KoTr.requestsLastMinute}회\n구글 번역: ${KoTr.googleStatus}',
                       style: TextStyle(fontSize: 12, color: cs.outline),
                     ),
                   ),

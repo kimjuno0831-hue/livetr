@@ -1,3 +1,4 @@
+import 'package:PiliPlus/ko/ko_translate.dart';
 // AI 번역기 여러 개를 돌려쓰기
 // · 제미나이(구글 AI Studio 키) + OpenAI 호환 서비스(Groq, NVIDIA, Mistral, OpenRouter, Cloudflare, 직접 입력)
 // · 번역기 하나에 모델을 여러 개 적으면(쉼표) 모델마다 따로 돌려씀 → 제미나이 키 하나로 모델 여러 개 돌려쓰기
@@ -420,6 +421,7 @@ abstract final class KoEngines {
     double temperature = 0.3,
   }) async {
     _count(s.key);
+    KoTr.noteRequest();
     if (s.engine.type == 'gemini') return _gemini(s, system, user, json, temperature);
     return _openai(s, system, user, temperature);
   }

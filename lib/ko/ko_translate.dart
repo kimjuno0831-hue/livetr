@@ -104,6 +104,9 @@ abstract final class KoTr {
   static bool get replyOn => enabled && _get(kReply, true);
   static bool get searchOn => enabled && _get(kSearch, true);
   static bool get searchKoOn => enabled && _get(kSearchKo, true);
+  static const kSearchShuffle = 'koTrSearchShuffle';
+  // 검색 결과를 당겨서 새로고침하면 섞어서 보여주기 (번역 켜기와 상관없음)
+  static bool get searchShuffleOn => _get(kSearchShuffle, true);
 
   // AI 번역기가 하나라도 쓸 수 있게 등록돼 있는지
   static bool get hasAi => KoEngines.any;
@@ -325,6 +328,7 @@ abstract final class KoTr {
 
   static void setStyle(int v) {
     _set(kStyle, v);
+    _recentAsk.clear();
     updates.value++;
     subRefresh.value++;
   }
@@ -377,7 +381,7 @@ abstract final class KoTr {
     } else {
       _viaGoogle.remove(src);
     }
-    _notifyTimer ??= Timer(const Duration(milliseconds: 100), () {
+    _notifyTimer ??= Timer(const Duration(milliseconds: 250), () {
       _notifyTimer = null;
       updates.value++;
     });
@@ -448,16 +452,26 @@ abstract final class KoTr {
       c.remove(s);
     }
     _gaveUp.remove(s);
+    _recentAsk.remove(s);
     _viaGoogle.remove(s);
     _by.remove(s);
     updates.value++;
     return translateAll([s], kind: kind);
   }
 
+  // 같은 글을 1분 안에 또 요청하지 않음 (화면을 다시 그릴 때마다 요청이 쏟아지는 것 방지)
+  static final LinkedHashMap<String, int> _recentAsk = LinkedHashMap();
+
   static void want(String s, {String kind = 'text'}) {
     if (!needs(s) || isTranslated(s) || _pending.contains(s) || _givenUp(s)) {
       return;
     }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final last = _recentAsk[s];
+    if (last != null && now - last < 60000) return;
+    _recentAsk.remove(s);
+    _recentAsk[s] = now;
+    if (_recentAsk.length > 20000) _recentAsk.remove(_recentAsk.keys.first);
     final m = _memeOf(s);
     if (m != null) {
       _put(s, m, by: '밈 사전');
@@ -485,13 +499,17 @@ abstract final class KoTr {
   static final _cjk = RegExp(r'[㐀-䶿一-鿿]');
   static final _hangul = RegExp(r'[가-힣ㄱ-ㅎㅏ-ㅣ]');
 
+  // 빌리빌리 이모티콘 [笑哭] [doge_金箍] 같은 것 (번역하면 그림을 못 찾아서 보호)
+  static final _emote = RegExp(r'\[[^\[\]\n]{1,24}\]');
+  static String _stripEmotes(String s) => s.replaceAll(_emote, '');
+
   static bool hasHangul(String s) => _hangul.hasMatch(s);
   static bool hasCjk(String s) => _cjk.hasMatch(s);
 
   static bool needs(String s) {
     final t = s.trim();
     if (t.isEmpty || t.length > 1500) return false;
-    if (_cjk.hasMatch(t)) return true;
+    if (_cjk.hasMatch(_stripEmotes(t))) return true;
     // '2333', 'awsl' 같은 밈은 사전으로 바꿈
     return _memeOf(t) != null;
   }
@@ -515,7 +533,48 @@ abstract final class KoTr {
     'refine': Queue(),
   };
   static final Map<String, int> _running = {'ui': 0, 'bg': 0, 'refine': 0};
-  static const Map<String, int> _maxRun = {'ui': 3, 'bg': 3, 'refine': 3};
+  // 영상 재생에 방해되지 않게 동시 요청 수를 줄임
+  static const Map<String, int> _maxRun = {'ui': 2, 'bg': 1, 'refine': 2};
+
+  // 영상이 로딩(버퍼링) 중이면 탄막·자막·다듬기 번역을 잠깐 멈춤. 로딩이 끝나고 2초 뒤에 다시.
+  static bool _playerBusy = false;
+  static Timer? _resumeTimer;
+
+  static void onPlayerBuffering(bool buffering) {
+    _resumeTimer?.cancel();
+    if (buffering) {
+      _playerBusy = true;
+      // 영상을 닫는 등으로 로딩 끝 소식이 안 와도 15초 뒤엔 다시 번역
+      _resumeTimer = Timer(const Duration(seconds: 15), () {
+        _playerBusy = false;
+        _pump();
+      });
+    } else {
+      _resumeTimer = Timer(const Duration(seconds: 2), () {
+        _playerBusy = false;
+        _pump();
+      });
+    }
+  }
+
+  // 최근 1분 동안 보낸 번역 요청 수 (빠른 설정 창에 표시)
+  static final Queue<int> _reqLog = Queue();
+
+  static void noteRequest() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _reqLog.add(now);
+    while (_reqLog.isNotEmpty && now - _reqLog.first > 60000) {
+      _reqLog.removeFirst();
+    }
+  }
+
+  static int get requestsLastMinute {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    while (_reqLog.isNotEmpty && now - _reqLog.first > 60000) {
+      _reqLog.removeFirst();
+    }
+    return _reqLog.length;
+  }
 
   static String _laneOf(String kind) =>
       (kind == 'dm' || kind == 'sub') ? 'bg' : 'ui';
@@ -591,6 +650,7 @@ abstract final class KoTr {
 
   static void _pump() {
     for (final lane in _lanes.keys) {
+      if (_playerBusy && lane != 'ui') continue;
       final q = _lanes[lane]!;
       while (_running[lane]! < _maxRun[lane]! && q.isNotEmpty) {
         final job = q.removeFirst();
@@ -744,11 +804,12 @@ abstract final class KoTr {
     if (out == null) return false;
     final t = out.trim();
     if (t.isEmpty) return false;
-    if (!_cjk.hasMatch(src)) return true; // 2333 같은 밈
+    if (!_cjk.hasMatch(_stripEmotes(src))) return true; // 2333 같은 밈, 이모티콘만 있는 글
     if (t == src.trim()) return false;
-    final han = _hanAll.allMatches(t).length;
+    final core = _stripEmotes(t);
+    final han = _hanAll.allMatches(core).length;
     if (han == 0) return true;
-    final hangul = _hangulAll.allMatches(t).length;
+    final hangul = _hangulAll.allMatches(core).length;
     if (hangul == 0) return false;
     return han <= hangul; // 한자가 한글보다 많이 남았으면 덜 된 번역
   }
@@ -786,7 +847,7 @@ abstract final class KoTr {
     List<String?>? retry;
     try {
       if (by.startsWith('구글')) {
-        if (hasAi) {
+        if (hasAi && kind != 'dm' && kind != 'live') {
           final (r, _) = await KoEngines.rotate((s) => _aiTranslate(s, sub, st));
           retry = r;
         }
@@ -823,15 +884,16 @@ abstract final class KoTr {
         return (await _googleSafe(xs), true, '구글 번역 (AI 대신)');
       }
     }
-    // 구글이 막혀 있으면 AI 번역기로 대신
-    if (googleBlocked && hasAi) {
+    // 구글이 막혀 있으면 AI 번역기로 대신 (탄막·라이브는 'AI 번역기를 쓸 항목'에 체크했을 때만 여기 안 옴 → 대신 안 함)
+    final aiOk = hasAi && kind != 'dm' && kind != 'live';
+    if (googleBlocked && aiOk) {
       try {
         final (r, slot) = await KoEngines.rotate((s) => _aiTranslate(s, xs, st));
         return (r, false, '${slot.label} (구글이 막혀서)');
       } catch (_) {}
     }
     final g = await _googleSafe(xs);
-    if (hasAi && googleBlocked && g.every((e) => e == null)) {
+    if (aiOk && googleBlocked && g.every((e) => e == null)) {
       // 번역 도중 구글이 막힘 → AI 로 다시
       try {
         final (r, slot) = await KoEngines.rotate((s) => _aiTranslate(s, xs, st));
@@ -862,7 +924,12 @@ abstract final class KoTr {
     List<MapEntry<String, String>> gl,
   ) {
     final vals = <String>[];
-    var r = s;
+    // 이모티콘을 먼저 표시로 바꿈 (되돌릴 때 원래 [..] 그대로)
+    var r = s.replaceAllMapped(_emote, (m) {
+      final i = vals.length;
+      vals.add(m[0]!);
+      return ' QZ${i}Q ';
+    });
     for (final e in gl) {
       if (!r.contains(e.key)) continue;
       final i = vals.length;
@@ -1142,6 +1209,7 @@ abstract final class KoTr {
     String tl, {
     required bool get,
   }) async {
+    noteRequest();
     final Response<String> res;
     final params = ep.client == 'gtx'
         ? {'client': 'gtx', 'sl': sl, 'tl': tl, 'dt': 't'}
@@ -1270,10 +1338,26 @@ abstract final class KoTr {
         system.write('${e.key} → ${e.value}\n');
       }
     }
+    // 이모티콘 [笑哭] 은 [#0] 같은 표시로 바꿔 보내고 번역 뒤 되돌림
+    final emo = <List<String>>[];
+    final sendXs = <String>[];
+    for (final x in xs) {
+      final vals = <String>[];
+      sendXs.add(
+        x.replaceAllMapped(_emote, (m) {
+          vals.add(m[0]!);
+          return '[#${vals.length - 1}]';
+        }),
+      );
+      emo.add(vals);
+    }
+    if (emo.any((v) => v.isNotEmpty)) {
+      system.write('\n[#0] [#1] 같은 표시는 이모티콘이다. 글자 하나 바꾸지 말고 같은 자리에 그대로 둬라.');
+    }
     final text = await KoEngines.ask(
       slot,
       system.toString(),
-      jsonEncode(xs),
+      jsonEncode(sendXs),
       json: true,
     );
     final a = text.indexOf('[');
@@ -1289,7 +1373,19 @@ abstract final class KoTr {
         ...await _aiTranslate(slot, xs.sublist(mid), st),
       ];
     }
-    final res = arr.map((e) => e?.toString()).toList();
+    final res = <String?>[];
+    for (var i = 0; i < arr.length; i++) {
+      final o = arr[i]?.toString();
+      final vals = emo[i];
+      res.add(
+        o == null || vals.isEmpty
+            ? o
+            : o.replaceAllMapped(RegExp(r'\[\s*#\s*(\d+)\s*\]'), (m) {
+                final k = int.parse(m[1]!);
+                return k < vals.length ? vals[k] : m[0]!;
+              }),
+      );
+    }
     // 절반 넘게 원문을 그대로 돌려줬으면 이 번역기는 실패로 보고 다음 번역기로
     var bad = 0;
     for (var i = 0; i < xs.length; i++) {

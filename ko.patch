@@ -218,7 +218,7 @@ index 575203d..ba6c390 100644
  
    Future<void> viewLater() async {
 diff --git a/lib/pages/danmaku/controller.dart b/lib/pages/danmaku/controller.dart
-index 456870d..a7c0ad7 100644
+index 456870d..8b0be5b 100644
 --- a/lib/pages/danmaku/controller.dart
 +++ b/lib/pages/danmaku/controller.dart
 @@ -4,6 +4,7 @@ import 'dart:io' show File;
@@ -229,7 +229,7 @@ index 456870d..a7c0ad7 100644
  import 'package:PiliPlus/plugin/pl_player/controller.dart';
  import 'package:PiliPlus/plugin/pl_player/models/data_source.dart';
  import 'package:PiliPlus/utils/accounts.dart';
-@@ -26,6 +27,11 @@ class PlDanmakuController {
+@@ -26,6 +27,13 @@ class PlDanmakuController {
  
    late final _isLogin = Accounts.main.isLogin;
  
@@ -237,11 +237,13 @@ index 456870d..a7c0ad7 100644
 +  int _lastProgress = 0;
 +  // 번역 말투를 바꾸면 받아둔 탄막을 그 말투로 다시 번역
 +  int _koStyle = KoTr.style;
++  // 미리 받기는 구간마다 한 번만 (실패해도 반복 안 함)
++  final Set<int> _koPrefetched = {};
 +
    final Map<int, List<DanmakuElem>> _dmSegMap = HashMap();
    // 已请求的段落标记
    late final Set<int> _requestedSeg = HashSet();
-@@ -88,13 +94,38 @@ class PlDanmakuController {
+@@ -88,13 +96,39 @@ class PlDanmakuController {
        final int pos = element.progress ~/ 100; //每0.1秒存储一次
        (_dmSegMap[pos] ??= []).add(element);
      }
@@ -274,7 +276,8 @@ index 456870d..a7c0ad7 100644
 +      // 한국어 번역: 다음 6분 묶음을 1분 전에 미리 받아서 번역해둠
 +      if (KoTr.dmOn &&
 +          progress % DmUtils.segLength > DmUtils.segLength - 60000 &&
-+          _requestedSeg.contains(segmentIndex)) {
++          _requestedSeg.contains(segmentIndex) &&
++          _koPrefetched.add(segmentIndex + 1)) {
 +        queryDanmaku(segmentIndex + 1);
 +      }
        if (!_requestedSeg.contains(segmentIndex)) {
@@ -1297,6 +1300,146 @@ index d47e6d4..d21ed1d 100644
                      const Spacer(),
                      Text(
                        DateFormatUtils.dateFormat(item.pubTime),
+diff --git a/lib/pages/search_panel/controller.dart b/lib/pages/search_panel/controller.dart
+index e909bd5..39aa099 100644
+--- a/lib/pages/search_panel/controller.dart
++++ b/lib/pages/search_panel/controller.dart
+@@ -1,4 +1,6 @@
++import 'package:PiliPlus/ko/ko_translate.dart';
+ import 'dart:async' show StreamSubscription, Timer;
++import 'dart:math' show Random;
+ 
+ import 'package:PiliPlus/http/loading_state.dart';
+ import 'package:PiliPlus/http/search.dart';
+@@ -48,6 +50,7 @@ class SearchPanelController<R extends SearchNumData<T>, T>
+     bool getBack = true,
+     String? label,
+   }) {
++    _koSorting = true; // 정렬·필터를 바꾼 새로고침은 섞지 않음
+     if (getBack) Get.back();
+     SmartDialog.dismiss();
+     if (label != null) {
+@@ -101,23 +104,114 @@ class SearchPanelController<R extends SearchNumData<T>, T>
+     }
+   }
+ 
+-  @override
+-  Future<LoadingState<R>> customGetData() => SearchHttp.searchByType<R>(
++  // ── 한국어판: 새로고침하면 섞기 / 랜덤 정렬 (영상 검색) ──
++  final RxBool koRandom = false.obs;
++  int koMinView = 0; // 조회수 최소
++  int koDur = 0; // 0 전체, 1 10분 이하, 2 10~30분, 3 30분 이상
++  int koDays = 0; // 0 전체, 아니면 최근 며칠
++  bool _koLoaded = false;
++  bool _koSorting = false;
++  int _koOffset = 0;
++  int _koMaxPage = 10;
++  final Set<int> _koUsedPages = {};
++  static final _koRnd = Random();
++
++  bool get _koVideo => searchType == SearchType.video;
++
++  Future<LoadingState<R>> _fetch(
++    int p, {
++    int? dur,
++    int? begin,
++    int? end,
++  }) => SearchHttp.searchByType<R>(
+     searchType: searchType_,
+     keyword: keyword,
+-    page: page,
++    page: p,
+     order: order,
+-    duration: videoDurationType?.index,
++    duration: dur ?? videoDurationType?.index,
+     tids: videoZoneType?.tids,
+     orderSort: userOrderType?.value.orderSort,
+     userType: userType?.value.index,
+     categoryId: articleZoneType?.value.categoryId,
+-    pubBegin: pubBegin,
+-    pubEnd: pubEnd,
++    pubBegin: begin ?? pubBegin,
++    pubEnd: end ?? pubEnd,
+     gaiaVtoken: gaiaVtoken,
+     onSuccess: _onSuccess,
+   );
+ 
++  @override
++  Future<LoadingState<R>> customGetData() async {
++    if (!_koVideo) return _fetch(page);
++    if (koRandom.value) {
++      _koSorting = false;
++      return _koRandomFetch();
++    }
++    // 당겨서 새로고침하면 앞쪽 몇 페이지 중 하나에서 시작하고 순서를 섞음
++    final shuffle = _koLoaded && !_koSorting && KoTr.searchShuffleOn;
++    if (page == 1) {
++      _koOffset = shuffle ? _koRnd.nextInt(4) : 0;
++      _koSorting = false;
++    }
++    final res = await _fetch(page + _koOffset);
++    if (res case Success(:final response)) {
++      if (shuffle || (_koOffset > 0 && KoTr.searchShuffleOn)) {
++        response.list?.shuffle(_koRnd);
++      }
++      _koLoaded = true;
++    }
++    return res;
++  }
++
++  // 랜덤: 여러 페이지를 무작위로 모아서 조건에 맞는 것만 섞어서
++  Future<LoadingState<R>> _koRandomFetch() async {
++    if (page == 1) _koUsedPages.clear();
++    final now = DateTime.now();
++    final begin = koDays > 0
++        ? now.subtract(Duration(days: koDays)).millisecondsSinceEpoch ~/ 1000
++        : pubBegin;
++    final end = koDays > 0 ? now.millisecondsSinceEpoch ~/ 1000 : pubEnd;
++    // 빌리빌리 길이 필터: 1 = 0~10분, 2 = 10~30분 (30분 이상은 앱에서 거름)
++    final int? dur = koDur == 1 || koDur == 2 ? koDur : videoDurationType?.index;
++    LoadingState<R>? first;
++    Success<R>? base;
++    final out = <T>[];
++    final seen = <Object?>{};
++    for (var round = 0; round < 3 && out.length < 12; round++) {
++      final pages = <int>[];
++      var guard = 0;
++      while (pages.length < 3 && guard++ < 30 && _koUsedPages.length < _koMaxPage) {
++        final p = 1 + _koRnd.nextInt(_koMaxPage);
++        if (_koUsedPages.add(p)) pages.add(p);
++      }
++      if (pages.isEmpty) break;
++      final results = await Future.wait(
++        pages.map((p) => _fetch(p, dur: dur, begin: begin, end: end)),
++      );
++      for (final r in results) {
++        first ??= r;
++        if (r is Success<R>) {
++          base ??= r;
++          final n = r.response.numResults;
++          if (n != null && n > 0) {
++            final mp = (n / 20).ceil();
++            _koMaxPage = mp < 1 ? 1 : (mp > 50 ? 50 : mp);
++          }
++          for (final it in r.response.list ?? <T>[]) {
++            if (it is! SearchVideoItemModel) continue;
++            if (!seen.add(it.aid)) continue;
++            if ((it.stat.view ?? 0) < koMinView) continue;
++            if (koDur == 3 && it.duration < 1800) continue;
++            out.add(it);
++          }
++        }
++      }
++    }
++    if (base == null) return first ?? const Error('결과 없음');
++    out.shuffle(_koRnd);
++    base.response.list = out;
++    return base;
++  }
++
+   void _onSuccess(String gaiaVtoken) {
+     this.gaiaVtoken = gaiaVtoken;
+     SmartDialog.showLoading(onDismiss: _stopTimer);
 diff --git a/lib/pages/search_panel/live/widgets/item.dart b/lib/pages/search_panel/live/widgets/item.dart
 index 23bcd09..a207147 100644
 --- a/lib/pages/search_panel/live/widgets/item.dart
@@ -1377,6 +1520,132 @@ index 16e3127..67086eb 100644
                      item.officialVerify!.desc!,
                      style: style,
                    ),
+diff --git a/lib/pages/search_panel/video/view.dart b/lib/pages/search_panel/video/view.dart
+index f7c3a3b..6c56551 100644
+--- a/lib/pages/search_panel/video/view.dart
++++ b/lib/pages/search_panel/video/view.dart
+@@ -72,15 +72,30 @@ mixin SearchVideoPanelMixin<S extends SearchVideoPanel>
+                           fontSize: 13,
+                           text: e.desc,
+                           bgColor: Colors.transparent,
+-                          textColor: controller.selectedType.value == e
++                          textColor:
++                              !controller.koRandom.value &&
++                                  controller.selectedType.value == e
+                               ? colorScheme.primary
+                               : colorScheme.outline,
+                           onTap: (_) => controller
++                            ..koRandom.value = false
+                             ..order = e == .totalrank ? '' : e.name
+                             ..selectedType.value = e
+                             ..onSortSearch(getBack: false),
+                         ),
+                       ),
++                    // 한국어판: 랜덤 정렬 (조건 고르기)
++                    Obx(
++                      () => SearchText(
++                        fontSize: 13,
++                        text: '🎲 랜덤',
++                        bgColor: Colors.transparent,
++                        textColor: controller.koRandom.value
++                            ? colorScheme.primary
++                            : colorScheme.outline,
++                        onTap: (_) => koShowRandomDialog(context, controller),
++                      ),
++                    ),
+                   ],
+                 ),
+               ),
+@@ -131,3 +146,89 @@ mixin SearchVideoPanelMixin<S extends SearchVideoPanel>
+   @override
+   Widget get buildLoading => gridSkeleton;
+ }
++
++
++// 한국어판: 랜덤 정렬 조건 고르기
++void koShowRandomDialog(BuildContext context, SearchVideoController c) {
++  const views = [(0, '제한 없음'), (1000, '1천+'), (10000, '1만+'), (100000, '10만+'), (1000000, '100만+')];
++  const durs = [(0, '전체'), (1, '10분 이하'), (2, '10~30분'), (3, '30분 이상')];
++  const days = [(0, '전체'), (7, '1주'), (30, '1달'), (365, '1년')];
++  var v = c.koMinView;
++  var d = c.koDur;
++  var day = c.koDays;
++  showDialog(
++    context: context,
++    builder: (context) => StatefulBuilder(
++      builder: (context, setState) {
++        final cs = ColorScheme.of(context);
++        Widget group(String title, List<(int, String)> opts, int cur, ValueChanged<int> pick) =>
++            Column(
++              crossAxisAlignment: CrossAxisAlignment.start,
++              children: [
++                Padding(
++                  padding: const EdgeInsets.only(top: 12, bottom: 6),
++                  child: Text(title, style: TextStyle(fontSize: 13, color: cs.primary)),
++                ),
++                Wrap(
++                  spacing: 6,
++                  runSpacing: 6,
++                  children: [
++                    for (final (val, label) in opts)
++                      SearchText(
++                        text: label,
++                        fontSize: 13,
++                        bgColor: val == cur ? cs.secondaryContainer : null,
++                        textColor: val == cur ? cs.onSecondaryContainer : null,
++                        onTap: (_) => setState(() => pick(val)),
++                      ),
++                  ],
++                ),
++              ],
++            );
++        return AlertDialog(
++          title: const Text('랜덤으로 보기'),
++          content: SingleChildScrollView(
++            child: Column(
++              mainAxisSize: MainAxisSize.min,
++              crossAxisAlignment: CrossAxisAlignment.start,
++              children: [
++                const Text(
++                  '검색 결과 여러 페이지에서 조건에 맞는 영상만 골라 섞어서 보여줘요. 당겨서 새로고침하면 또 다르게 섞여요.',
++                  style: TextStyle(fontSize: 12),
++                ),
++                group('조회수', views, v, (x) => v = x),
++                group('길이', durs, d, (x) => d = x),
++                group('올린 날짜', days, day, (x) => day = x),
++              ],
++            ),
++          ),
++          actions: [
++            if (c.koRandom.value)
++              TextButton(
++                onPressed: () {
++                  Get.back();
++                  c
++                    ..koRandom.value = false
++                    ..onSortSearch(getBack: false);
++                },
++                child: const Text('랜덤 끄기'),
++              ),
++            TextButton(onPressed: Get.back, child: const Text('취소')),
++            TextButton(
++              onPressed: () {
++                Get.back();
++                c
++                  ..koMinView = v
++                  ..koDur = d
++                  ..koDays = day
++                  ..koRandom.value = true
++                  ..onSortSearch(getBack: false);
++              },
++              child: const Text('랜덤으로 보기'),
++            ),
++          ],
++        );
++      },
++    ),
++  );
++}
 diff --git a/lib/pages/setting/models/dm_settings.dart b/lib/pages/setting/models/dm_settings.dart
 index f59e090..7fa7136 100644
 --- a/lib/pages/setting/models/dm_settings.dart
@@ -2146,6 +2415,24 @@ index 588334a..6a08022 100644
                  SizedBox(
                    width: btnWidth,
                    height: btnHeight,
+diff --git a/lib/plugin/pl_player/controller.dart b/lib/plugin/pl_player/controller.dart
+index b5b5626..085ca09 100644
+--- a/lib/plugin/pl_player/controller.dart
++++ b/lib/plugin/pl_player/controller.dart
+@@ -1,3 +1,4 @@
++import 'package:PiliPlus/ko/ko_translate.dart';
+ import 'dart:async' show StreamSubscription, Timer;
+ import 'dart:convert' show ascii, utf8;
+ import 'dart:io' show Platform;
+@@ -1101,6 +1102,8 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
+       }),
+       stream.buffering.listen((bool buffering) {
+         isBuffering.value = buffering;
++        // 한국어 번역: 영상 로딩 중엔 번역 요청을 멈춰서 재생 먼저
++        KoTr.onPlayerBuffering(buffering);
+         if (!playerStatus.isCompleted) {
+           _stopWakeLockTimer();
+           _updatePlaybackState();
 diff --git a/lib/plugin/pl_player/view/view.dart b/lib/plugin/pl_player/view/view.dart
 index e44e288..65db8a1 100644
 --- a/lib/plugin/pl_player/view/view.dart
