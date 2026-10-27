@@ -1301,7 +1301,7 @@ index d47e6d4..d21ed1d 100644
                      Text(
                        DateFormatUtils.dateFormat(item.pubTime),
 diff --git a/lib/pages/search_panel/controller.dart b/lib/pages/search_panel/controller.dart
-index e909bd5..39aa099 100644
+index e909bd5..3c1a359 100644
 --- a/lib/pages/search_panel/controller.dart
 +++ b/lib/pages/search_panel/controller.dart
 @@ -1,4 +1,6 @@
@@ -1319,12 +1319,13 @@ index e909bd5..39aa099 100644
      if (getBack) Get.back();
      SmartDialog.dismiss();
      if (label != null) {
-@@ -101,23 +104,114 @@ class SearchPanelController<R extends SearchNumData<T>, T>
+@@ -101,23 +104,123 @@ class SearchPanelController<R extends SearchNumData<T>, T>
      }
    }
  
 -  @override
 -  Future<LoadingState<R>> customGetData() => SearchHttp.searchByType<R>(
+-    searchType: searchType_,
 +  // ── 한국어판: 새로고침하면 섞기 / 랜덤 정렬 (영상 검색) ──
 +  final RxBool koRandom = false.obs;
 +  int koMinView = 0; // 조회수 최소
@@ -1337,15 +1338,18 @@ index e909bd5..39aa099 100644
 +  final Set<int> _koUsedPages = {};
 +  static final _koRnd = Random();
 +
-+  bool get _koVideo => searchType == SearchType.video;
++  // 영상 탭과 종합 탭(영상 목록을 같이 씀)
++  bool get _koVideo =>
++      searchType == SearchType.video || searchType == SearchType.all;
 +
 +  Future<LoadingState<R>> _fetch(
 +    int p, {
 +    int? dur,
 +    int? begin,
 +    int? end,
++    SearchType? type,
 +  }) => SearchHttp.searchByType<R>(
-     searchType: searchType_,
++    searchType: type ?? searchType_,
      keyword: keyword,
 -    page: page,
 +    page: p,
@@ -1410,7 +1414,10 @@ index e909bd5..39aa099 100644
 +      }
 +      if (pages.isEmpty) break;
 +      final results = await Future.wait(
-+        pages.map((p) => _fetch(p, dur: dur, begin: begin, end: end)),
++        // 랜덤은 종합 탭에서도 영상 검색으로 (페이지마다 영상 20개)
++        pages.map(
++          (p) => _fetch(p, dur: dur, begin: begin, end: end, type: SearchType.video),
++        ),
 +      );
 +      for (final r in results) {
 +        first ??= r;
@@ -1433,6 +1440,9 @@ index e909bd5..39aa099 100644
 +    }
 +    if (base == null) return first ?? const Error('결과 없음');
 +    out.shuffle(_koRnd);
++    if (page == 1) {
++      SmartDialog.showToast('🎲 ${_koUsedPages.length}페이지에서 ${out.length}개를 섞었어요');
++    }
 +    base.response.list = out;
 +    return base;
 +  }
