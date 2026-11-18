@@ -11,6 +11,9 @@ object Handoff {
     private fun share(url: String) = Intent(Intent.ACTION_SEND)
         .setType("text/plain")
         .putExtra(Intent.EXTRA_TEXT, url)
+        // YTDLnis 자동화용: 동영상으로, 다운로드 카드 없이 바로 받기
+        .putExtra("TYPE", "video")
+        .putExtra("BACKGROUND", true)
 
     /** 텍스트 공유를 받을 수 있는 앱들 */
     fun targets(c: Context): List<ResolveInfo> =
