@@ -33,6 +33,8 @@ class MainActivity : Activity() {
     private lateinit var listBox: LinearLayout
     private lateinit var logView: TextView
     private lateinit var intervalBtn: Button
+    private lateinit var fastBtn: Button
+    private lateinit var smartBox: CheckBox
     private lateinit var targetBtn: Button
     private lateinit var overlayBtn: Button
     private lateinit var batteryBtn: Button
@@ -84,7 +86,7 @@ class MainActivity : Activity() {
             else {
                 input.setText("")
                 Store.log(this, "$id 추가함, 기존 다시보기 확인 중…")
-                CheckWorker.schedule(this)
+                Scheduler.start(this)
                 CheckWorker.runNow(this)
                 refreshSoon()
             }
@@ -105,14 +107,25 @@ class MainActivity : Activity() {
         root.addView(autoBox)
 
         intervalBtn = button("") {
-            val opts = intArrayOf(15, 30, 60, 120)
-            val labels = opts.map { "${it}분마다" }.toTypedArray()
-            AlertDialog.Builder(this).setTitle("확인 간격")
-                .setItems(labels) { _, i ->
-                    Store.setInterval(this, opts[i])
-                    CheckWorker.schedule(this)
-                    refresh()
-                }.show()
+            pickMinutes("평소 확인 간격", intArrayOf(1, 2, 3, 5, 10, 15, 30, 60)) {
+                Store.setInterval(this, it)
+            }
+        }
+
+        smartBox = CheckBox(this).apply {
+            text = "방송 중이거나 방송이 끝난 직후엔 더 자주 확인\n(다시보기가 올라오면 바로 잡기 위해, 종료 후 최대 3시간)"
+            setOnCheckedChangeListener { _, b ->
+                Store.setSmart(this@MainActivity, b)
+                Scheduler.scheduleNext(this@MainActivity)
+                refresh()
+            }
+        }
+        root.addView(smartBox)
+
+        fastBtn = button("") {
+            pickMinutes("방송 중·종료 직후 확인 간격", intArrayOf(1, 2, 3, 5)) {
+                Store.setFastInterval(this, it)
+            }
         }
 
         targetBtn = button("") { pickTarget() }
@@ -158,7 +171,7 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
-        if (Store.streamers(this).isNotEmpty()) CheckWorker.schedule(this)
+        if (Store.streamers(this).isNotEmpty()) Scheduler.start(this)
     }
 
     override fun onResume() {
@@ -170,7 +183,12 @@ class MainActivity : Activity() {
         val last = Store.lastCheck(this)
         val lastTxt = if (last == 0L) "아직 없음"
         else SimpleDateFormat("MM/dd HH:mm", Locale.KOREA).format(Date(last))
-        status.text = "마지막 확인: $lastTxt\n보낼 앱: ${Handoff.targetLabel(this)}"
+        val fmt = SimpleDateFormat("MM/dd HH:mm", Locale.KOREA)
+        val next = Store.nextCheck(this)
+        val nextTxt = if (next == 0L) "예약 없음" else fmt.format(Date(next))
+        val mode = if (Store.smart(this) && Store.isHot(this)) "빠른 확인 중 (${Scheduler.currentIntervalMin(this)}분마다)"
+        else "평소 (${Store.interval(this)}분마다)"
+        status.text = "마지막 확인: $lastTxt\n다음 확인: $nextTxt · $mode\n보낼 앱: ${Handoff.targetLabel(this)}"
 
         listBox.removeAllViews()
         val ids = Store.streamers(this)
@@ -185,8 +203,14 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
+            val now = System.currentTimeMillis()
+            val tag = when {
+                Store.wasLive(this, id) -> "  🔴 방송 중"
+                Store.hotUntil(this, id) > now -> "  ⏳ 다시보기 기다리는 중"
+                else -> ""
+            }
             r.addView(TextView(this).apply {
-                text = id
+                text = id + tag
                 textSize = 16f
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             r.addView(Button(this).apply {
@@ -197,6 +221,7 @@ class MainActivity : Activity() {
                         .setMessage("$id 를 목록에서 뺄까?")
                         .setPositiveButton("빼기") { _, _ ->
                             Store.removeStreamer(this@MainActivity, id)
+                            Scheduler.scheduleNext(this@MainActivity)
                             refresh()
                         }
                         .setNegativeButton("취소", null).show()
@@ -206,7 +231,10 @@ class MainActivity : Activity() {
         }
 
         autoBox.isChecked = Store.autoSend(this)
-        intervalBtn.text = "확인 간격: ${Store.interval(this)}분마다 (바꾸기)"
+        intervalBtn.text = "평소 확인 간격: ${Store.interval(this)}분마다 (바꾸기)"
+        smartBox.isChecked = Store.smart(this)
+        fastBtn.text = "방송 중·종료 직후 간격: ${Store.fastInterval(this)}분마다 (바꾸기)"
+        fastBtn.visibility = if (Store.smart(this)) View.VISIBLE else View.GONE
         targetBtn.text = "보낼 앱 고르기 (지금: ${Handoff.targetLabel(this)})"
 
         val overlayOk = Handoff.canAutoStart(this)
@@ -216,7 +244,7 @@ class MainActivity : Activity() {
         val pm = getSystemService(PowerManager::class.java)
         val batteryOk = pm.isIgnoringBatteryOptimizations(packageName)
         batteryBtn.text = if (batteryOk) "✓ 배터리 최적화 제외됨"
-        else "⚠ 배터리 최적화에서 빼기 (확인이 밀리지 않게)"
+        else "⚠ 배터리 최적화에서 빼기 (안 하면 화면 꺼진 동안 9분 이하 간격이 안 지켜짐)"
 
         logView.text = Store.logs(this).ifBlank { "(기록 없음)" }
     }
@@ -224,6 +252,31 @@ class MainActivity : Activity() {
     /** 작업이 끝날 즈음 화면 다시 그리기 */
     private fun refreshSoon() {
         for (ms in longArrayOf(2500, 6000, 12000)) ui.postDelayed({ refresh() }, ms)
+    }
+
+    /** 분 단위 간격 고르기 (+ 직접 입력) */
+    private fun pickMinutes(title: String, opts: IntArray, save: (Int) -> Unit) {
+        val labels = opts.map { "${it}분" }.toMutableList().apply { add("직접 입력…") }
+        AlertDialog.Builder(this).setTitle(title)
+            .setItems(labels.toTypedArray()) { _, i ->
+                if (i < opts.size) {
+                    save(opts[i]); Scheduler.scheduleNext(this); refresh()
+                } else {
+                    val et = EditText(this).apply {
+                        inputType = InputType.TYPE_CLASS_NUMBER
+                        hint = "분 (1 이상)"
+                    }
+                    AlertDialog.Builder(this).setTitle(title).setView(et)
+                        .setPositiveButton("확인") { _, _ ->
+                            val v = et.text.toString().toIntOrNull()
+                            if (v == null || v < 1) toast("1 이상 숫자로 넣어줘")
+                            else {
+                                save(v); Scheduler.scheduleNext(this); refresh()
+                            }
+                        }
+                        .setNegativeButton("취소", null).show()
+                }
+            }.show()
     }
 
     private fun pickTarget() {

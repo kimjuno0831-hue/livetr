@@ -1,5 +1,6 @@
 package app.cap.soopvod
 
+import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -54,6 +55,38 @@ object Soop {
             }
         }
         throw last ?: IOException("알 수 없는 오류")
+    }
+
+    /**
+     * 방송 중인지 확인 (yt-dlp와 같은 방식). true=방송 중, false=방송 안 함, null=알 수 없음
+     */
+    fun isLive(id: String): Boolean? {
+        val hostsLive = listOf(
+            "https://live.sooplive.co.kr/afreeca/player_live_api.php",
+            "https://live.sooplive.com/afreeca/player_live_api.php",
+        )
+        for (u in hostsLive) {
+            try {
+                val req = Request.Builder().url("$u?bjid=$id")
+                    .header("User-Agent", UA)
+                    .header("Referer", "https://play.sooplive.co.kr/$id")
+                    .post(FormBody.Builder().add("bid", id).add("type", "live").add("player_type", "html5").build())
+                    .build()
+                http.newCall(req).execute().use { r ->
+                    if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
+                    val ch = JSONObject(r.body?.string() ?: "").optJSONObject("CHANNEL")
+                        ?: throw IOException("형식 다름")
+                    return when (ch.optInt("RESULT", Int.MIN_VALUE)) {
+                        0 -> false
+                        1, -6 -> true // -6: 19금 등 로그인 필요한 방송
+                        else -> null
+                    }
+                }
+            } catch (e: Exception) {
+                // 다음 주소로
+            }
+        }
+        return null
     }
 
     /** 아이디 또는 채널/방송 주소에서 스트리머 아이디 뽑기 */
