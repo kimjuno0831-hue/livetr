@@ -36,6 +36,7 @@ class MainActivity : Activity() {
     private lateinit var fastBtn: Button
     private lateinit var smartBox: CheckBox
     private lateinit var bgBox: CheckBox
+    private lateinit var masterSw: android.widget.Switch
     private lateinit var targetBtn: Button
     private lateinit var overlayBtn: Button
     private lateinit var batteryBtn: Button
@@ -63,6 +64,30 @@ class MainActivity : Activity() {
             isAllCaps = false
             setOnClickListener { onClick() }
         }.also { root.addView(it) }
+
+        masterSw = android.widget.Switch(this).apply {
+            text = "숲 자동 다운로드"
+            textSize = 20f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, dp(4), 0, dp(12))
+            setOnClickListener {
+                val on = isChecked
+                val c = this@MainActivity
+                Store.setEnabled(c, on)
+                if (on) {
+                    Store.resetBaselines(c)
+                    Store.log(c, "자동 다운로드 켬 (꺼져 있던 동안 올라온 다시보기는 건너뜀)")
+                    Scheduler.start(c)
+                    CheckWorker.runNow(c)
+                    refreshSoon()
+                } else {
+                    Scheduler.stop(c)
+                    Store.log(c, "자동 다운로드 끔")
+                }
+                refresh()
+            }
+        }
+        root.addView(masterSw)
 
         status = TextView(this).apply { textSize = 14f }
         root.addView(status)
@@ -157,6 +182,7 @@ class MainActivity : Activity() {
         header("실행")
         button("지금 확인") {
             if (Store.streamers(this).isEmpty()) toast("스트리머부터 추가해줘")
+            else if (!Store.enabled(this)) toast("맨 위 스위치가 꺼져 있어")
             else {
                 CheckWorker.runNow(this)
                 toast("확인 중… 잠시 뒤 기록에 나와")
@@ -195,7 +221,10 @@ class MainActivity : Activity() {
         val nextTxt = if (next == 0L) "예약 없음" else fmt.format(Date(next))
         val mode = if (Store.smart(this) && Store.isHot(this)) "빠른 확인 중 (${Scheduler.currentIntervalMin(this)}분마다)"
         else "평소 (${Store.interval(this)}분마다)"
-        status.text = "마지막 확인: $lastTxt\n다음 확인: $nextTxt · $mode\n보낼 앱: ${Handoff.targetLabel(this)}"
+        val on = Store.enabled(this)
+        masterSw.isChecked = on
+        status.text = if (!on) "⏸ 꺼져 있음 — 확인도 다운로드도 안 함\n보낼 앱: ${Handoff.targetLabel(this)}"
+        else "마지막 확인: $lastTxt\n다음 확인: $nextTxt · $mode\n보낼 앱: ${Handoff.targetLabel(this)}"
 
         listBox.removeAllViews()
         val ids = Store.streamers(this)

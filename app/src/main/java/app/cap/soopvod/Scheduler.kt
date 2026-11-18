@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
+import androidx.work.WorkManager
 import kotlin.concurrent.thread
 
 /** 정확한 시각 알람으로 다음 확인 예약 (15분 제한 없음) */
@@ -22,7 +23,7 @@ object Scheduler {
 
     fun scheduleNext(c: Context) {
         val am = c.getSystemService(AlarmManager::class.java)
-        if (Store.streamers(c).isEmpty()) {
+        if (Store.streamers(c).isEmpty() || !Store.enabled(c)) {
             am.cancel(pi(c))
             Store.setNextCheck(c, 0L)
             return
@@ -36,8 +37,19 @@ object Scheduler {
 
     /** 알람 + 예비용 WorkManager(15분) 둘 다 걸기 */
     fun start(c: Context) {
+        if (!Store.enabled(c)) {
+            stop(c)
+            return
+        }
         scheduleNext(c)
         CheckWorker.schedule(c)
+    }
+
+    fun stop(c: Context) {
+        c.getSystemService(AlarmManager::class.java).cancel(pi(c))
+        Store.setNextCheck(c, 0L)
+        WorkManager.getInstance(c).cancelUniqueWork("check")
+        WorkManager.getInstance(c).cancelUniqueWork("now")
     }
 }
 

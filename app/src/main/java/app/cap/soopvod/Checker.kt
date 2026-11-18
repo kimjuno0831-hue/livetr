@@ -12,6 +12,7 @@ object Checker {
 
     /** 이미 돌고 있으면 false */
     fun run(c: Context): Boolean {
+        if (!Store.enabled(c)) return false
         if (!running.compareAndSet(false, true)) return false
         try {
             for (id in Store.streamers(c)) checkOne(c, id)

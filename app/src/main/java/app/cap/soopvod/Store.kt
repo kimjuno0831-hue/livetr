@@ -43,6 +43,17 @@ object Store {
     fun interval(c: Context) = p(c).getInt("interval", 10)
     fun setInterval(c: Context, v: Int) = p(c).edit().putInt("interval", v).apply()
 
+    /** 전체 기능 켜짐/꺼짐 */
+    fun enabled(c: Context) = p(c).getBoolean("enabled", true)
+    fun setEnabled(c: Context, v: Boolean) = p(c).edit().putBoolean("enabled", v).apply()
+
+    /** 다시 켤 때 꺼져 있던 동안 올라온 다시보기는 건너뛰도록 기준점 초기화 */
+    fun resetBaselines(c: Context) {
+        val e = p(c).edit()
+        for (id in streamers(c)) e.remove("init_$id").remove("live_$id").remove("hot_$id")
+        e.apply()
+    }
+
     fun bgFlag(c: Context) = p(c).getBoolean("bg", true)
     fun setBgFlag(c: Context, v: Boolean) = p(c).edit().putBoolean("bg", v).apply()
 
