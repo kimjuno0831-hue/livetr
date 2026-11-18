@@ -35,6 +35,7 @@ class MainActivity : Activity() {
     private lateinit var intervalBtn: Button
     private lateinit var fastBtn: Button
     private lateinit var smartBox: CheckBox
+    private lateinit var bgBox: CheckBox
     private lateinit var targetBtn: Button
     private lateinit var overlayBtn: Button
     private lateinit var batteryBtn: Button
@@ -105,6 +106,12 @@ class MainActivity : Activity() {
             setOnCheckedChangeListener { _, b -> Store.setAutoSend(this@MainActivity, b) }
         }
         root.addView(autoBox)
+
+        bgBox = CheckBox(this).apply {
+            text = "YTDLnis에 '카드 없이 바로 받기' 신호 같이 보내기\n(끄면 YTDLnis 다운로드 카드 설정을 따름)"
+            setOnCheckedChangeListener { _, b -> Store.setBgFlag(this@MainActivity, b) }
+        }
+        root.addView(bgBox)
 
         intervalBtn = button("") {
             pickMinutes("평소 확인 간격", intArrayOf(1, 2, 3, 5, 10, 15, 30, 60)) {
@@ -231,6 +238,7 @@ class MainActivity : Activity() {
         }
 
         autoBox.isChecked = Store.autoSend(this)
+        bgBox.isChecked = Store.bgFlag(this)
         intervalBtn.text = "평소 확인 간격: ${Store.interval(this)}분마다 (바꾸기)"
         smartBox.isChecked = Store.smart(this)
         fastBtn.text = "방송 중·종료 직후 간격: ${Store.fastInterval(this)}분마다 (바꾸기)"

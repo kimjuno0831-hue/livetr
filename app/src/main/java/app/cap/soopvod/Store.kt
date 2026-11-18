@@ -43,6 +43,9 @@ object Store {
     fun interval(c: Context) = p(c).getInt("interval", 10)
     fun setInterval(c: Context, v: Int) = p(c).edit().putInt("interval", v).apply()
 
+    fun bgFlag(c: Context) = p(c).getBoolean("bg", true)
+    fun setBgFlag(c: Context, v: Boolean) = p(c).edit().putBoolean("bg", v).apply()
+
     fun autoSend(c: Context) = p(c).getBoolean("auto", true)
     fun setAutoSend(c: Context, v: Boolean) = p(c).edit().putBoolean("auto", v).apply()
 
