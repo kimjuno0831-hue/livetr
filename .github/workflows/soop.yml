@@ -1,0 +1,46 @@
+name: Build SoopVod APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [soop-vod]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 1 Get code
+        uses: actions/checkout@v4
+
+      - name: 2 Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 3 Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: 4 Build the app
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log || {
+            grep -E "^e: |error:|FAILURE|What went wrong" -A3 build.log | head -40 | sed 's/%/%25/g' | while IFS= read -r l; do echo "::error::$l"; done
+            exit 1
+          }
+
+      - name: 5 Publish APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eux
+          cp app/build/outputs/apk/debug/app-debug.apk SoopVod.apk
+          gh release delete soop-latest --yes --cleanup-tag || true
+          gh release create soop-latest SoopVod.apk --target "${{ github.sha }}" --title "SOOP 다시보기 자동받기 (최신)" --notes "auto build ${{ github.run_number }}" --prerelease
