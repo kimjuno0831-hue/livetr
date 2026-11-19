@@ -9,18 +9,23 @@ import android.provider.Settings
 /** 다운로드 앱(YTDLnis 등)에 링크 넘기기 */
 object Handoff {
     private var bg = true
+    private var cmd = false
 
     private fun share(url: String): Intent {
         val i = Intent(Intent.ACTION_SEND)
             .setType("text/plain")
             .putExtra(Intent.EXTRA_TEXT, url)
-            .putExtra("TYPE", "video")
+            // command = YTDLnis의 "선호하는 명령 템플릿"으로 yt-dlp를 한 번에 실행 → 여러 파트 전부 받음
+            .putExtra("TYPE", if (cmd) "command" else "video")
         // YTDLnis 자동화용: 다운로드 카드 없이 바로 받기 (설정에서 끌 수 있음)
         if (bg) i.putExtra("BACKGROUND", true)
         return i
     }
 
-    private fun load(c: Context) { bg = Store.bgFlag(c) }
+    private fun load(c: Context) {
+        bg = Store.bgFlag(c)
+        cmd = Store.cmdMode(c)
+    }
 
     /** 텍스트 공유를 받을 수 있는 앱들 */
     fun targets(c: Context): List<ResolveInfo> =

@@ -54,6 +54,9 @@ object Store {
         e.apply()
     }
 
+    fun cmdMode(c: Context) = p(c).getBoolean("cmd", false)
+    fun setCmdMode(c: Context, v: Boolean) = p(c).edit().putBoolean("cmd", v).apply()
+
     fun bgFlag(c: Context) = p(c).getBoolean("bg", true)
     fun setBgFlag(c: Context, v: Boolean) = p(c).edit().putBoolean("bg", v).apply()
 

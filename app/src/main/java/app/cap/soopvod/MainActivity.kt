@@ -36,6 +36,7 @@ class MainActivity : Activity() {
     private lateinit var fastBtn: Button
     private lateinit var smartBox: CheckBox
     private lateinit var bgBox: CheckBox
+    private lateinit var cmdBox: CheckBox
     private lateinit var masterSw: android.widget.Switch
     private lateinit var targetBtn: Button
     private lateinit var overlayBtn: Button
@@ -137,6 +138,12 @@ class MainActivity : Activity() {
             setOnCheckedChangeListener { _, b -> Store.setBgFlag(this@MainActivity, b) }
         }
         root.addView(bgBox)
+
+        cmdBox = CheckBox(this).apply {
+            text = "YTDLnis '선호하는 명령 템플릿'으로 받기\n(파트가 여러 개인 다시보기도 전부 받음. YTDLnis에 템플릿 먼저 설정 필요)"
+            setOnCheckedChangeListener { _, b -> Store.setCmdMode(this@MainActivity, b) }
+        }
+        root.addView(cmdBox)
 
         intervalBtn = button("") {
             pickMinutes("평소 확인 간격", intArrayOf(1, 2, 3, 5, 10, 15, 30, 60)) {
@@ -268,6 +275,7 @@ class MainActivity : Activity() {
 
         autoBox.isChecked = Store.autoSend(this)
         bgBox.isChecked = Store.bgFlag(this)
+        cmdBox.isChecked = Store.cmdMode(this)
         intervalBtn.text = "평소 확인 간격: ${Store.interval(this)}분마다 (바꾸기)"
         smartBox.isChecked = Store.smart(this)
         fastBtn.text = "방송 중·종료 직후 간격: ${Store.fastInterval(this)}분마다 (바꾸기)"
